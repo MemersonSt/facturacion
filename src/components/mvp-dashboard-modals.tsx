@@ -9,6 +9,7 @@ import type {
   Customer,
   NewProductForm,
   Product,
+  SriInvoiceDetail,
   StockAdjustmentForm,
 } from "@/components/mvp-dashboard-types";
 
@@ -103,13 +104,18 @@ export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClos
               />
             </div>
           </div>
-          <div className="mt-2 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
-            <Button disabled={saving} type="submit">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Guardar producto
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando...
+                </>
+              ) : (
+                "Guardar"
+              )}
             </Button>
           </div>
         </form>
@@ -195,13 +201,18 @@ export function StockAdjustmentModal({
               />
             </div>
           </div>
-          <div className="mt-2 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
-            <Button disabled={saving} type="submit" variant="secondary">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Aplicar ajuste
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...
+                </>
+              ) : (
+                "Guardar Movimiento"
+              )}
             </Button>
           </div>
         </form>
@@ -403,6 +414,168 @@ export function ProductPickerModal({
               Agregar al detalle
             </Button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type InvoiceDetailModalProps = {
+  isOpen: boolean;
+  invoice: SriInvoiceDetail | null;
+  onClose: () => void;
+};
+
+export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailModalProps) {
+  if (!isOpen || !invoice) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-100 p-5">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Detalle Factura SRI</h3>
+            <p className="text-sm text-slate-500">Venta #{invoice.saleNumber}</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Cerrar
+          </Button>
+        </div>
+
+        <div className="overflow-y-auto p-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            <section className="space-y-3 rounded-lg border border-slate-100 bg-slate-50 p-4">
+              <h4 className="font-medium text-slate-800">Estado SRI</h4>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Estado:</span>
+                  <span className="font-semibold">{invoice.status}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Intentos:</span>
+                  <span>{invoice.retryCount}</span>
+                </div>
+                {invoice.authorizationNumber && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-slate-500">No. Autorizacion:</span>
+                    <span className="break-all font-mono text-xs">{invoice.authorizationNumber}</span>
+                  </div>
+                )}
+                {invoice.claveAcceso && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-slate-500">Clave Acceso:</span>
+                    <span className="break-all font-mono text-xs">{invoice.claveAcceso}</span>
+                  </div>
+                )}
+                {invoice.lastError && (
+                  <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">
+                    <strong>Error:</strong> {invoice.lastError}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="space-y-3 rounded-lg border border-slate-100 bg-white p-4">
+              <h4 className="font-medium text-slate-800">Cliente</h4>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Razon Social:</span>
+                  <span className="font-semibold">{invoice.sale.customer.razonSocial}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Identificacion:</span>
+                  <span>{invoice.sale.customer.identificacion}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Email:</span>
+                  <span>{invoice.sale.customer.email || "-"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Direccion:</span>
+                  <span className="text-right">{invoice.sale.customer.direccion || "-"}</span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section className="mt-6">
+            <h4 className="mb-3 font-medium text-slate-800">Items de la Venta</h4>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <Table>
+                <THead>
+                  <Tr>
+                    <Th>Codigo</Th>
+                    <Th>Producto</Th>
+                    <Th>Cant</Th>
+                    <Th>Precio Unit</Th>
+                    <Th>Total</Th>
+                  </Tr>
+                </THead>
+                <TBody>
+                  {invoice.sale.items.map((item) => (
+                    <Tr key={item.id}>
+                      <Td className="font-medium">{item.product.codigo}</Td>
+                      <Td>{item.product.nombre}</Td>
+                      <Td>{Number(item.cantidad).toFixed(3)}</Td>
+                      <Td>${Number(item.precioUnitario).toFixed(2)}</Td>
+                      <Td className="font-semibold">${Number(item.total).toFixed(2)}</Td>
+                    </Tr>
+                  ))}
+                </TBody>
+              </Table>
+            </div>
+          </section>
+
+          <section className="mt-6 flex flex-col items-end gap-2 text-sm">
+            <div className="flex w-full max-w-xs justify-between border-b border-slate-100 py-1">
+              <span className="text-slate-600">Subtotal:</span>
+              <span>${Number(invoice.sale.subtotal).toFixed(2)}</span>
+            </div>
+            <div className="flex w-full max-w-xs justify-between border-b border-slate-100 py-1">
+              <span className="text-slate-600">IVA:</span>
+              <span>${Number(invoice.sale.taxTotal).toFixed(2)}</span>
+            </div>
+            <div className="flex w-full max-w-xs justify-between py-1 text-base font-bold text-emerald-700">
+              <span>Total:</span>
+              <span>${Number(invoice.sale.total).toFixed(2)}</span>
+            </div>
+          </section>
+
+          {invoice.documents && (
+            <section className="mt-6 rounded-lg bg-slate-50 p-4">
+              <h4 className="mb-2 font-medium text-slate-800">Archivos Generados</h4>
+              <div className="flex gap-4 text-sm">
+                {invoice.documents.xmlAuthorizedPath ? (
+                  <a
+                    href={`/api/v1/sri-invoices/${invoice.id}/xml`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Descargar XML
+                  </a>
+                ) : (
+                  <span className="text-slate-400">XML no disponible</span>
+                )}
+                {invoice.documents.ridePdfPath ? (
+                  <a
+                    href={`/api/v1/sri-invoices/${invoice.id}/ride`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Descargar RIDE (PDF)
+                  </a>
+                ) : (
+                  <span className="text-slate-400">RIDE no disponible</span>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
+        
+        <div className="border-t border-slate-100 p-4 text-right">
+           <Button onClick={onClose}>Cerrar Detalle</Button>
         </div>
       </div>
     </div>

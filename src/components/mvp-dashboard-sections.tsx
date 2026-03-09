@@ -1,9 +1,22 @@
-import { Loader2, RefreshCcw, ShoppingCart } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Loader2,
+  RefreshCcw,
+  ShoppingCart,
+} from "lucide-react";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
@@ -19,6 +32,7 @@ import {
   type SriInvoice,
   type StockItem,
 } from "@/components/mvp-dashboard-types";
+import type { PaginationMeta } from "@/components/mvp-dashboard-types";
 
 type OverviewSectionProps = {
   products: Product[];
@@ -502,16 +516,52 @@ export function CheckoutSection({
 type SriSectionProps = {
   loading: boolean;
   pendingInvoices: SriInvoice[];
+  pagination: PaginationMeta;
   saving: boolean;
   onRetry: (invoiceId: string) => void;
+  onViewDetails: (invoiceId: string) => void;
+  onPageChange: (page: number) => void;
 };
 
-export function SriSection({ loading, pendingInvoices, saving, onRetry }: SriSectionProps) {
+export function SriSection({
+  loading,
+  pendingInvoices,
+  pagination,
+  saving,
+  onRetry,
+  onViewDetails,
+  onPageChange,
+}: SriSectionProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Pendientes SRI</CardTitle>
-        <CardDescription>Facturas con error de autorizacion para reintentar.</CardDescription>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Pendientes SRI</CardTitle>
+            <CardDescription>Facturas con error de autorizacion para reintentar.</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(pagination.page - 1)}
+              disabled={pagination.page <= 1 || loading}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm text-slate-600">
+              Pagina {pagination.page} de {pagination.totalPages || 1}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages || loading}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -537,6 +587,9 @@ export function SriSection({ loading, pendingInvoices, saving, onRetry }: SriSec
                     <Badge variant="warning">{invoice.status}</Badge>
                     <Button size="sm" variant="outline" onClick={() => onRetry(invoice.id)} disabled={saving}>
                       <RefreshCcw className="h-4 w-4" /> Reintentar
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => onViewDetails(invoice.id)}>
+                      <Eye className="h-4 w-4" /> Ver
                     </Button>
                   </div>
                 </div>

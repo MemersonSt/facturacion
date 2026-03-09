@@ -53,6 +53,46 @@ export type LinePreviewItem = {
   total: number;
 };
 
+export type SaleItemDetail = {
+  id: string;
+  productId: string;
+  product: Product;
+  cantidad: number;
+  precioUnitario: number;
+  descuento: number;
+  subtotal: number;
+  valorIva: number;
+  total: number;
+};
+
+export type SalePaymentDetail = {
+  id: string;
+  formaPago: string;
+  amount: number;
+  plazo: number;
+  unidadTiempo: string;
+};
+
+export type SriInvoiceDetail = SriInvoice & {
+  sale: {
+    customer: Customer;
+    items: SaleItemDetail[];
+    payments: SalePaymentDetail[];
+    subtotal: number;
+    taxTotal: number;
+    total: number;
+  };
+  documents?: {
+    xmlSignedPath?: string | null;
+    xmlAuthorizedPath?: string | null;
+    ridePdfPath?: string | null;
+  } | null;
+  claveAcceso?: string | null;
+  authorizationNumber?: string | null;
+  sriReceptionStatus?: string | null;
+  sriAuthorizationStatus?: string | null;
+};
+
 export type SectionKey = "overview" | "products" | "inventory" | "checkout" | "sri";
 
 export type IdentificationTypeOption = {
@@ -106,4 +146,16 @@ export type CheckoutForm = {
   email: string;
   telefono: string;
   formaPago: string;
+};
+
+export type PaginationMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+export type PaginatedResult<T> = {
+  data: T[];
+  pagination: PaginationMeta;
 };
