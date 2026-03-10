@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchJson } from "@/components/mvp-dashboard-api";
 import { CustomerPickerModal, ProductPickerModal } from "@/components/mvp-dashboard-modals";
 import { CheckoutSection } from "@/components/mvp-dashboard-sections";
+import { Button } from "@/components/ui/button";
 import {
   IDENTIFICATION_TYPES,
   PAYMENT_METHODS,
@@ -16,6 +17,14 @@ import {
   type LinePreviewItem,
   type Product,
 } from "@/components/mvp-dashboard-types";
+
+type CheckoutResponse = {
+  saleNumber: string;
+  invoice: {
+    sriInvoiceId: string;
+    status: "DRAFT" | "AUTHORIZED" | "PENDING_SRI" | "ERROR";
+  } | null;
+};
 
 export default function CheckoutPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -30,6 +39,7 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [authorizedSriInvoiceId, setAuthorizedSriInvoiceId] = useState<string | null>(null);
 
   const [checkout, setCheckout] = useState<CheckoutForm>({
     issuerId: "5fc1d44c-9a58-4383-b475-2c3adb49afc9",
@@ -232,9 +242,10 @@ export default function CheckoutPage() {
     e.preventDefault();
     setSaving(true);
     setMessage("");
+    setAuthorizedSriInvoiceId(null);
 
     try {
-      await fetchJson("/api/v1/sales/checkout", {
+      const result = await fetchJson<CheckoutResponse>("/api/v1/sales/checkout", {
         method: "POST",
         body: JSON.stringify({
           issuerId: checkout.issuerId,
@@ -267,12 +278,19 @@ export default function CheckoutPage() {
         }),
       });
 
-      setMessage("Venta registrada y proceso SRI ejecutado");
+      if (result.invoice?.status === "AUTHORIZED") {
+        setAuthorizedSriInvoiceId(result.invoice.sriInvoiceId);
+        setMessage(`Venta #${result.saleNumber} registrada y factura autorizada correctamente`);
+      } else {
+        setMessage(`Venta #${result.saleNumber} registrada. La factura aun no se encuentra autorizada.`);
+      }
+
       setLineItems([]);
       setSelectedProductIds([]);
       setProductSearch("");
       await loadCheckoutData();
     } catch (error) {
+      setAuthorizedSriInvoiceId(null);
       setMessage(error instanceof Error ? error.message : "No se pudo registrar la venta");
     } finally {
       setSaving(false);
@@ -290,6 +308,24 @@ export default function CheckoutPage() {
   return (
     <>
       {message ? <p className="text-sm font-medium text-emerald-700">{message}</p> : null}
+      {authorizedSriInvoiceId ? (
+        <div className="mb-4 mt-2 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => window.open(`/api/v1/sri-invoices/${authorizedSriInvoiceId}/ride`, "_blank", "noopener,noreferrer")}
+          >
+            Descargar PDF
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => window.open(`/api/v1/sri-invoices/${authorizedSriInvoiceId}/xml`, "_blank", "noopener,noreferrer")}
+          >
+            Descargar XML
+          </Button>
+        </div>
+      ) : null}
       <CheckoutSection
         checkout={checkout}
         setCheckout={setCheckout}
