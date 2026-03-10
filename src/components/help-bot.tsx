@@ -50,6 +50,7 @@ export function HelpBot() {
             const timer = setTimeout(() => setIsAnimating(false), 500);
             return () => clearTimeout(timer);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeSection, isOpen]);
 
     return (
