@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
+import { HelpBot } from "@/components/help-bot";
 import { cn } from "@/lib/utils";
 
 type Product = {
@@ -171,14 +172,14 @@ export function MvpDashboard() {
         };
       })
       .filter(Boolean) as Array<{
-      productId: string;
-      cantidad: number;
-      descuento: number;
-      product: Product;
-      subtotal: number;
-      iva: number;
-      total: number;
-    }>;
+        productId: string;
+        cantidad: number;
+        descuento: number;
+        product: Product;
+        subtotal: number;
+        iva: number;
+        total: number;
+      }>;
   }, [lineItems, products]);
 
   const checkoutTotal = useMemo(() => {
@@ -531,7 +532,7 @@ export function MvpDashboard() {
 
   function renderProducts() {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
         <Card>
           <CardHeader>
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -590,7 +591,7 @@ export function MvpDashboard() {
 
   function renderInventory() {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
         <Card>
           <CardHeader>
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -653,7 +654,7 @@ export function MvpDashboard() {
     const hasCustomerSelected = Boolean(checkout.identificacion.trim() && checkout.razonSocial.trim());
 
     return (
-      <Card className="border-emerald-100">
+      <Card className="border-indigo-100 animate-in fade-in zoom-in-95 duration-300">
         <CardHeader>
           <CardTitle>Checkout (Venta + SRI)</CardTitle>
           <CardDescription>
@@ -734,7 +735,7 @@ export function MvpDashboard() {
                 </div>
 
                 {hasCustomerSelected ? (
-                  <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  <div className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
                     Cliente activo: <span className="font-semibold">{checkout.razonSocial}</span> ({checkout.identificacion})
                   </div>
                 ) : (
@@ -897,8 +898,8 @@ export function MvpDashboard() {
             </div>
 
             <aside className="space-y-4 xl:sticky xl:top-8 xl:self-start">
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Resumen en tiempo real</p>
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Resumen en tiempo real</p>
                 <div className="mt-3 space-y-2 text-sm">
                   <div className="flex items-center justify-between text-slate-700">
                     <span>Subtotal</span>
@@ -908,7 +909,7 @@ export function MvpDashboard() {
                     <span>IVA</span>
                     <span>${checkoutTax.toFixed(2)}</span>
                   </div>
-                  <div className="border-t border-emerald-200 pt-2 text-base font-semibold text-emerald-900">
+                  <div className="border-t border-indigo-200 pt-2 text-base font-semibold text-indigo-900">
                     <div className="flex items-center justify-between">
                       <span>Total</span>
                       <span>${checkoutTotal.toFixed(2)}</span>
@@ -937,7 +938,7 @@ export function MvpDashboard() {
 
   function renderSri() {
     return (
-      <Card>
+      <Card className="animate-in fade-in zoom-in-95 duration-300">
         <CardHeader>
           <CardTitle>Pendientes SRI</CardTitle>
           <CardDescription>Facturas con error de autorizacion para reintentar.</CardDescription>
@@ -987,19 +988,41 @@ export function MvpDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff,_#f8fafc_45%,_#f1f5f9)] p-4 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-4">
-        <header className="rounded-2xl border border-emerald-100 bg-white/90 p-6 shadow-sm backdrop-blur">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">ARGSOFT MVP</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">Inventario, Ventas y Facturacion SRI</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Opciones separadas por modulo para operar Productos, Inventario, Checkout y Facturacion SRI.
-          </p>
-          {message ? <p className="mt-4 text-sm font-medium text-emerald-700">{message}</p> : null}
+    <main className="min-h-screen relative overflow-hidden bg-slate-50 p-4 md:p-8">
+      {/* Background elegant orbs */}
+      <div className="absolute top-0 left-1/4 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-200/40 blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-0 right-1/4 h-[600px] w-[600px] translate-x-1/3 translate-y-1/3 rounded-full bg-purple-200/40 blur-[120px] pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 h-[400px] w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-rose-200/30 blur-[100px] pointer-events-none" />
+
+      <div className="relative mx-auto max-w-7xl space-y-6">
+        <header className="relative overflow-hidden rounded-3xl border border-white/60 bg-white/70 p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl">
+          <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-gradient-to-br from-indigo-200 to-purple-200 opacity-40 blur-3xl pointer-events-none"></div>
+          <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-gradient-to-tr from-rose-100 to-amber-100 opacity-40 blur-3xl pointer-events-none"></div>
+
+          <div className="relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-sm">
+                <Boxes className="h-5 w-5" />
+              </div>
+              <p className="text-sm font-bold tracking-[0.2em] text-indigo-900/70 uppercase">ARGSOFT MVP</p>
+            </div>
+            <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-slate-900 lg:text-5xl">
+              Inventario y <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Facturación SRI</span>
+            </h1>
+            <p className="mt-3 max-w-2xl text-lg text-slate-600 leading-relaxed">
+              Gestiona todo tu catálogo, controla el stock en tiempo real y emite tus facturas fácilmente desde una sola plataforma unificada e intuitiva.
+            </p>
+            {message ? (
+              <div className="mt-5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 shadow-sm">
+                <span className="flex h-2 w-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
+                {message}
+              </div>
+            ) : null}
+          </div>
         </header>
 
-        <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          <aside className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:sticky lg:top-8 lg:h-fit">
+        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+          <aside className="space-y-2 rounded-3xl border border-white/60 bg-white/70 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl lg:sticky lg:top-8 lg:h-fit">
             {sectionConfig.map((section) => {
               const Icon = section.icon;
               const active = section.key === activeSection;
@@ -1010,10 +1033,10 @@ export function MvpDashboard() {
                   type="button"
                   onClick={() => setActiveSection(section.key)}
                   className={cn(
-                    "w-full rounded-xl border px-3 py-3 text-left transition",
+                    "w-full rounded-2xl border px-4 py-3.5 text-left transition-all duration-300",
                     active
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                      : "border-transparent bg-slate-50 text-slate-700 hover:border-slate-200 hover:bg-white",
+                      ? "border-indigo-100 bg-white shadow-md text-indigo-900 font-semibold translate-x-1"
+                      : "border-transparent bg-transparent text-slate-600 hover:bg-white/60 hover:text-slate-900",
                   )}
                 >
                   <div className="flex items-center gap-2">
@@ -1045,6 +1068,8 @@ export function MvpDashboard() {
           </section>
         </div>
       </div>
+
+      <HelpBot activeSection={activeSection} />
 
       {isProductModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
