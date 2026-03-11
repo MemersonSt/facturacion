@@ -1,12 +1,15 @@
 import { MvpDashboardNav } from "@/components/mvp-dashboard-nav";
 import { HelpBot } from "@/components/help-bot";
+import { LogoutButton } from "@/components/logout-button";
+import { getSession } from "@/lib/auth";
 import { Boxes } from "lucide-react";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getSession();
   return (
     <main className="min-h-screen relative overflow-hidden bg-slate-50 p-4 md:p-8">
       {/* Background elegant orbs */}
@@ -20,12 +23,23 @@ export default function DashboardLayout({
           <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-gradient-to-tr from-rose-100 to-amber-100 opacity-40 blur-3xl pointer-events-none"></div>
 
           <div className="relative z-10">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-sm">
-                <Boxes className="h-5 w-5" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-sm">
+                    <Boxes className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-bold tracking-[0.2em] text-indigo-900/70 uppercase">ARGSOFT MVP</p>
+                </div>
+                {session ? (
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-slate-800">{session.name}</p>
+                      <p className="text-xs text-slate-400">{session.role === "ADMIN" ? "Administrador" : "Vendedor"}</p>
+                    </div>
+                    <LogoutButton />
+                  </div>
+                ) : null}
               </div>
-              <p className="text-sm font-bold tracking-[0.2em] text-indigo-900/70 uppercase">ARGSOFT MVP</p>
-            </div>
             <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-slate-900 lg:text-5xl">
               Inventario y <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Facturación SRI</span>
             </h1>
@@ -36,7 +50,7 @@ export default function DashboardLayout({
         </header>
 
         <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-          <MvpDashboardNav />
+          <MvpDashboardNav userRole={session?.role} />
           <section className="space-y-4">{children}</section>
         </div>
       </div>

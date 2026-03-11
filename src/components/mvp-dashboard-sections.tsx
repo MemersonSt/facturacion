@@ -46,7 +46,41 @@ type OverviewSectionProps = {
   stock: StockItem[];
 };
 
+const OVERVIEW_ALERTS_PREVIEW = 8;
+const OVERVIEW_PENDING_PREVIEW = 6;
+
 export function OverviewSection({ products, lowStockCount, pendingInvoices, checkoutTotal, stock }: OverviewSectionProps) {
+  const [alertsQuery, setAlertsQuery] = useState("");
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+
+  const lowStockItems = useMemo(
+    () =>
+      stock
+        .filter((item) => item.lowStock)
+        .sort((a, b) => (b.minQuantity - b.quantity) - (a.minQuantity - a.quantity)),
+    [stock],
+  );
+
+  const filteredAlerts = useMemo(() => {
+    const q = alertsQuery.trim().toLowerCase();
+    if (!q) return lowStockItems;
+    return lowStockItems.filter(
+      (item) =>
+        item.productName.toLowerCase().includes(q) ||
+        item.codigo.toLowerCase().includes(q),
+    );
+  }, [alertsQuery, lowStockItems]);
+
+  const visibleAlerts = showAllAlerts
+    ? filteredAlerts
+    : filteredAlerts.slice(0, OVERVIEW_ALERTS_PREVIEW);
+  const pendingPreview = pendingInvoices.slice(0, OVERVIEW_PENDING_PREVIEW);
+
+  function onSearchAlerts(value: string) {
+    setAlertsQuery(value);
+    setShowAllAlerts(false);
+  }
+
   return (
     <div className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -76,33 +110,47 @@ export function OverviewSection({ products, lowStockCount, pendingInvoices, chec
         </Card>
       </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Alertas de Inventario</CardTitle>
-          <CardDescription>Productos que ya requieren reposicion.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <THead>
-                <Tr>
-                  <Th>Codigo</Th>
-                  <Th>Producto</Th>
-                  <Th>Stock</Th>
-                  <Th>Minimo</Th>
-                </Tr>
-              </THead>
-              <TBody>
-                {stock.filter((item) => item.lowStock).length === 0 ? (
+      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <CardTitle>Alertas de Inventario</CardTitle>
+                <CardDescription>
+                  {filteredAlerts.length} alerta{filteredAlerts.length !== 1 ? "s" : ""} encontrada{filteredAlerts.length !== 1 ? "s" : ""}
+                </CardDescription>
+              </div>
+              <div className="relative w-full md:w-72">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  placeholder="Buscar por codigo o producto..."
+                  value={alertsQuery}
+                  onChange={(e) => onSearchAlerts(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="max-h-[430px] overflow-auto">
+              <Table>
+                <THead>
                   <Tr>
-                    <Td colSpan={4} className="text-slate-500">
-                      Sin alertas de stock.
-                    </Td>
+                    <Th>Codigo</Th>
+                    <Th>Producto</Th>
+                    <Th>Stock</Th>
+                    <Th>Minimo</Th>
                   </Tr>
-                ) : (
-                  stock
-                    .filter((item) => item.lowStock)
-                    .map((row) => (
+                </THead>
+                <TBody>
+                  {visibleAlerts.length === 0 ? (
+                    <Tr>
+                      <Td colSpan={4} className="text-slate-500">
+                        {alertsQuery ? "Sin coincidencias para tu busqueda." : "Sin alertas de stock."}
+                      </Td>
+                    </Tr>
+                  ) : (
+                    visibleAlerts.map((row) => (
                       <Tr key={row.productId}>
                         <Td className="font-medium">{row.codigo}</Td>
                         <Td>{row.productName}</Td>
@@ -110,12 +158,84 @@ export function OverviewSection({ products, lowStockCount, pendingInvoices, chec
                         <Td>{row.minQuantity.toFixed(3)}</Td>
                       </Tr>
                     ))
-                )}
-              </TBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+                  )}
+                </TBody>
+              </Table>
+            </div>
+
+            {filteredAlerts.length > OVERVIEW_ALERTS_PREVIEW ? (
+              <div className="mt-4 flex justify-end">
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowAllAlerts((prev) => !prev)}>
+                  {showAllAlerts
+                    ? "Ver menos"
+                    : `Ver todas (${filteredAlerts.length - OVERVIEW_ALERTS_PREVIEW} mas)`}
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Pendientes SRI</CardTitle>
+              <CardDescription>
+                {pendingInvoices.length} comprobante{pendingInvoices.length !== 1 ? "s" : ""} en cola
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {pendingPreview.length === 0 ? (
+                <p className="text-sm text-slate-500">No hay facturas pendientes por enviar.</p>
+              ) : (
+                <div className="space-y-2">
+                  {pendingPreview.map((invoice) => (
+                    <div key={invoice.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">Venta #{invoice.saleNumber}</p>
+                        <p className="text-xs text-slate-500">Intentos: {invoice.retryCount}</p>
+                      </div>
+                      <Badge variant="warning">Pendiente</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {pendingInvoices.length > OVERVIEW_PENDING_PREVIEW ? (
+                <p className="mt-3 text-xs text-slate-500">
+                  +{pendingInvoices.length - OVERVIEW_PENDING_PREVIEW} pendientes adicionales en la seccion SRI.
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Estado Rapido</CardTitle>
+              <CardDescription>Semaforo operativo del sistema.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">Inventario</span>
+                <Badge variant={lowStockCount > 0 ? "warning" : "success"}>
+                  {lowStockCount > 0 ? "Atencion" : "Estable"}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">Facturacion SRI</span>
+                <Badge variant={pendingInvoices.length > 0 ? "warning" : "success"}>
+                  {pendingInvoices.length > 0 ? "Pendientes" : "Al dia"}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">Catalogo</span>
+                <Badge variant={products.length > 0 ? "success" : "danger"}>
+                  {products.length > 0 ? "Con datos" : "Vacio"}
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

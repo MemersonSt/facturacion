@@ -1,6 +1,6 @@
 "use client";
 
-import { Boxes, ClipboardList, PackageSearch, ShoppingCart, WalletCards } from "lucide-react";
+import { Boxes, ClipboardList, PackageSearch, ShoppingCart, Users, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -11,6 +11,7 @@ type NavItem = {
   label: string;
   hint: string;
   icon: typeof Boxes;
+  adminOnly?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -19,15 +20,21 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/inventory", label: "Inventario", hint: "Stock y ajustes", icon: PackageSearch },
   { href: "/checkout", label: "Checkout", hint: "Venta + SRI", icon: ShoppingCart },
   { href: "/sri", label: "Facturacion SRI", hint: "Reintentos", icon: WalletCards },
+  { href: "/users", label: "Usuarios", hint: "Gestion de accesos", icon: Users, adminOnly: true },
 ];
 
-export function MvpDashboardNav() {
+type MvpDashboardNavProps = {
+  userRole?: "ADMIN" | "SELLER";
+};
+
+export function MvpDashboardNav({ userRole }: MvpDashboardNavProps) {
   const pathname = usePathname();
+  const visibleItems = NAV_ITEMS.filter((item) => !item.adminOnly || userRole === "ADMIN");
 
   return (
     <>
       <aside className="hidden space-y-2 rounded-3xl border border-white/60 bg-white/70 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl lg:sticky lg:top-8 lg:block lg:h-fit">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
 
@@ -53,7 +60,7 @@ export function MvpDashboardNav() {
       </aside>
 
       <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
-        {NAV_ITEMS.map((item) => (
+        {visibleItems.map((item) => (
           <Link
             key={`mobile-${item.href}`}
             href={item.href}
