@@ -467,7 +467,12 @@ type CheckoutSectionProps = {
   checkoutTotal: number;
   selectedIdentificationType?: IdentificationTypeOption;
   selectedPaymentMethod?: PaymentMethodOption;
+  canPrintDocuments: boolean;
+  canResetCheckout: boolean;
   saving: boolean;
+  onPrintRide: () => void;
+  onPrintXml: () => void;
+  onResetCheckout: () => void;
   onCheckout: (e: FormEvent<HTMLFormElement>) => void;
   onOpenCustomerPicker: () => void;
   onOpenProductPicker: () => void;
@@ -485,7 +490,12 @@ export function CheckoutSection({
   checkoutTotal,
   selectedIdentificationType,
   selectedPaymentMethod,
+  canPrintDocuments,
+  canResetCheckout,
   saving,
+  onPrintRide,
+  onPrintXml,
+  onResetCheckout,
   onCheckout,
   onOpenCustomerPicker,
   onOpenProductPicker,
@@ -498,8 +508,8 @@ export function CheckoutSection({
   return (
     <Card className="border-emerald-100">
       <CardHeader>
-        <CardTitle>Checkout (Venta + SRI)</CardTitle>
-        <CardDescription>Flujo rapido para registrar la venta, validar cliente y emitir factura en un solo paso.</CardDescription>
+        <CardTitle>Facturar Venta</CardTitle>
+        <CardDescription>Registrar la venta, validar cliente y emitir factura en un solo paso.</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]" onSubmit={onCheckout}>
@@ -729,9 +739,42 @@ export function CheckoutSection({
             </div>
 
             <Button disabled={saving || linePreview.length === 0} type="submit" size="lg" className="w-full">
-              <ShoppingCart className="h-4 w-4" />
-              Confirmar checkout
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="h-4 w-4" />
+                  Registrar Venta
+                </>
+              )}
             </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={onResetCheckout}
+              disabled={saving || !canResetCheckout}
+            >
+              <RefreshCcw className="h-4 w-4" />
+              Resetear todo
+            </Button>
+
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button className="w-full" type="button" variant="outline" disabled={!canPrintDocuments} onClick={onPrintRide}>
+                  Descargar PDF
+                </Button>
+                <Button className="w-full" type="button" variant="outline" disabled={!canPrintDocuments} onClick={onPrintXml}>
+                  Descargar XML
+                </Button>
+              </div>
+              {!canPrintDocuments ? (
+                <p className="text-xs text-slate-500">Se habilitan cuando la factura este autorizada.</p>
+              ) : null}
+            </div>
           </aside>
         </form>
       </CardContent>

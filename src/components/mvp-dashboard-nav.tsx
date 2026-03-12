@@ -18,8 +18,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/overview", label: "Resumen", hint: "Vista operativa", icon: Boxes },
   { href: "/products", label: "Productos", hint: "Catalogo", icon: ClipboardList },
   { href: "/inventory", label: "Inventario", hint: "Stock y ajustes", icon: PackageSearch },
-  { href: "/checkout", label: "Checkout", hint: "Venta + SRI", icon: ShoppingCart },
-  { href: "/sri", label: "Facturacion SRI", hint: "Reintentos", icon: WalletCards },
+  { href: "/checkout", label: "Facturar Venta", hint: "Venta + SRI", icon: ShoppingCart },
+  { href: "/sri", label: "Facturacion", hint: "Reintentos", icon: WalletCards },
   { href: "/users", label: "Usuarios", hint: "Gestion de accesos", icon: Users, adminOnly: true },
 ];
 

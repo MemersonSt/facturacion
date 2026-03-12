@@ -1,13 +1,12 @@
 "use client";
 
 import { format } from "date-fns";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { fetchJson } from "@/components/mvp-dashboard-api";
 import { CustomerPickerModal, ProductPickerModal } from "@/components/mvp-dashboard-modals";
 import { CheckoutSection } from "@/components/mvp-dashboard-sections";
-import { Button } from "@/components/ui/button";
 import {
   IDENTIFICATION_TYPES,
   PAYMENT_METHODS,
@@ -26,6 +25,63 @@ type CheckoutResponse = {
   } | null;
 };
 
+function buildInitialCheckoutForm(): CheckoutForm {
+  return {
+    issuerId: "5fc1d44c-9a58-4383-b475-2c3adb49afc9",
+    fechaEmision: format(new Date(), "dd/MM/yyyy"),
+    tipoIdentificacion: "04",
+    identificacion: "",
+    razonSocial: "",
+    direccion: "",
+    email: "",
+    telefono: "",
+    formaPago: "01",
+  };
+}
+
+type MessageTone = "success" | "error" | "info";
+
+type CheckoutMessage = {
+  text: string;
+  tone: MessageTone;
+};
+
+function CheckoutMessagePopover({
+  message,
+  onClose,
+}: {
+  message: CheckoutMessage | null;
+  onClose: () => void;
+}) {
+  if (!message) return null;
+
+  const toneStyles: Record<MessageTone, string> = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    error: "border-red-200 bg-red-50 text-red-800",
+    info: "border-indigo-200 bg-indigo-50 text-indigo-800",
+  };
+
+  const ToneIcon = message.tone === "success"
+    ? CheckCircle2
+    : message.tone === "error"
+      ? AlertTriangle
+      : Info;
+
+  return (
+    <div className="fixed right-4 top-4 z-[60] w-full max-w-sm">
+      <div className={`rounded-xl border p-3 shadow-lg ${toneStyles[message.tone]}`} role="alert" aria-live="polite">
+        <div className="flex items-start gap-2">
+          <ToneIcon className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="flex-1 text-sm font-medium">{message.text}</p>
+          <button type="button" aria-label="Cerrar mensaje" onClick={onClose} className="rounded p-0.5 hover:bg-black/5">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CheckoutPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -38,20 +94,10 @@ export default function CheckoutPage() {
   const [customerLoading, setCustomerLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<CheckoutMessage | null>(null);
   const [authorizedSriInvoiceId, setAuthorizedSriInvoiceId] = useState<string | null>(null);
 
-  const [checkout, setCheckout] = useState<CheckoutForm>({
-    issuerId: "5fc1d44c-9a58-4383-b475-2c3adb49afc9",
-    fechaEmision: format(new Date(), "dd/MM/yyyy"),
-    tipoIdentificacion: "04",
-    identificacion: "",
-    razonSocial: "",
-    direccion: "",
-    email: "",
-    telefono: "",
-    formaPago: "01",
-  });
+  const [checkout, setCheckout] = useState<CheckoutForm>(buildInitialCheckoutForm);
 
   const linePreview = useMemo<LinePreviewItem[]>(() => {
     return lineItems
@@ -86,6 +132,19 @@ export default function CheckoutPage() {
     () => PAYMENT_METHODS.find((method) => method.code === checkout.formaPago),
     [checkout.formaPago],
   );
+  const canResetCheckout = useMemo(
+    () =>
+      lineItems.length > 0 ||
+      Boolean(authorizedSriInvoiceId) ||
+      checkout.tipoIdentificacion !== "04" ||
+      checkout.formaPago !== "01" ||
+      checkout.identificacion.trim() !== "" ||
+      checkout.razonSocial.trim() !== "" ||
+      checkout.direccion.trim() !== "" ||
+      checkout.email.trim() !== "" ||
+      checkout.telefono.trim() !== "",
+    [lineItems.length, authorizedSriInvoiceId, checkout],
+  );
 
   const filteredProducts = useMemo(() => {
     const term = productSearch.trim().toLowerCase();
@@ -113,7 +172,7 @@ export default function CheckoutPage() {
       setProducts(productsRes);
       setCustomers(customersRes);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo cargar checkout");
+      setMessage({ text: error instanceof Error ? error.message : "No se pudo cargar checkout", tone: "error" });
     } finally {
       setLoading(false);
     }
@@ -131,11 +190,17 @@ export default function CheckoutPage() {
       const result = await fetchJson<Customer[]>(`/api/v1/customers${query}`);
       setCustomers(result);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo cargar clientes");
+      setMessage({ text: error instanceof Error ? error.message : "No se pudo cargar clientes", tone: "error" });
     } finally {
       setCustomerLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!message) return;
+    const timeoutId = setTimeout(() => setMessage(null), 4500);
+    return () => clearTimeout(timeoutId);
+  }, [message]);
 
   useEffect(() => {
     if (!isCustomerPickerOpen) {
@@ -212,7 +277,7 @@ export default function CheckoutPage() {
     }));
     setIsCustomerPickerOpen(false);
     setCustomerSearch("");
-    setMessage(`Cliente seleccionado: ${customer.razonSocial}`);
+    setMessage({ text: `Cliente seleccionado: ${customer.razonSocial}`, tone: "success" });
   }
 
   function openCustomerPicker() {
@@ -238,10 +303,43 @@ export default function CheckoutPage() {
     setIsProductPickerOpen(false);
   }
 
+  function onResetCheckout() {
+    setCheckout(buildInitialCheckoutForm());
+    setLineItems([]);
+    setSelectedProductIds([]);
+    setCustomerSearch("");
+    setProductSearch("");
+    setIsCustomerPickerOpen(false);
+    setIsProductPickerOpen(false);
+    setAuthorizedSriInvoiceId(null);
+    setMessage({ text: "Formulario reiniciado correctamente.", tone: "info" });
+  }
+
+  function validateIdentification(tipoIdentificacion: string, identificacion: string): string | null {
+    const normalized = identificacion.trim();
+
+    if (tipoIdentificacion === "05" && !/^\d{10}$/.test(normalized)) {
+      return "La cedula debe tener exactamente 10 digitos numericos.";
+    }
+
+    if (tipoIdentificacion === "04" && !/^\d{13}$/.test(normalized)) {
+      return "El RUC debe tener exactamente 13 digitos numericos.";
+    }
+
+    return null;
+  }
+
   async function onCheckout(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setMessage(null);
+
+    const identificationValidationError = validateIdentification(checkout.tipoIdentificacion, checkout.identificacion);
+    if (identificationValidationError) {
+      setMessage({ text: identificationValidationError, tone: "error" });
+      return;
+    }
+
     setSaving(true);
-    setMessage("");
     setAuthorizedSriInvoiceId(null);
 
     try {
@@ -253,7 +351,7 @@ export default function CheckoutPage() {
           moneda: "USD",
           customer: {
             tipoIdentificacion: checkout.tipoIdentificacion,
-            identificacion: checkout.identificacion,
+            identificacion: checkout.identificacion.trim(),
             razonSocial: checkout.razonSocial,
             direccion: checkout.direccion,
             email: checkout.email,
@@ -280,9 +378,9 @@ export default function CheckoutPage() {
 
       if (result.invoice?.status === "AUTHORIZED") {
         setAuthorizedSriInvoiceId(result.invoice.sriInvoiceId);
-        setMessage(`Venta #${result.saleNumber} registrada y factura autorizada correctamente`);
+        setMessage({ text: `Venta #${result.saleNumber} registrada y factura autorizada correctamente`, tone: "success" });
       } else {
-        setMessage(`Venta #${result.saleNumber} registrada. La factura aun no se encuentra autorizada.`);
+        setMessage({ text: `Venta #${result.saleNumber} registrada. La factura aun no se encuentra autorizada.`, tone: "info" });
       }
 
       setLineItems([]);
@@ -291,7 +389,7 @@ export default function CheckoutPage() {
       await loadCheckoutData();
     } catch (error) {
       setAuthorizedSriInvoiceId(null);
-      setMessage(error instanceof Error ? error.message : "No se pudo registrar la venta");
+      setMessage({ text: error instanceof Error ? error.message : "No se pudo registrar la venta", tone: "error" });
     } finally {
       setSaving(false);
     }
@@ -307,25 +405,15 @@ export default function CheckoutPage() {
 
   return (
     <>
-      {message ? <p className="text-sm font-medium text-emerald-700">{message}</p> : null}
-      {authorizedSriInvoiceId ? (
-        <div className="mb-4 mt-2 flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => window.open(`/api/v1/sri-invoices/${authorizedSriInvoiceId}/ride`, "_blank", "noopener,noreferrer")}
-          >
-            Descargar PDF
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => window.open(`/api/v1/sri-invoices/${authorizedSriInvoiceId}/xml`, "_blank", "noopener,noreferrer")}
-          >
-            Descargar XML
-          </Button>
+      {saving ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-[1px]">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-xl">
+            <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+            Registrando venta y procesando factura...
+          </div>
         </div>
       ) : null}
+      <CheckoutMessagePopover message={message} onClose={() => setMessage(null)} />
       <CheckoutSection
         checkout={checkout}
         setCheckout={setCheckout}
@@ -335,7 +423,18 @@ export default function CheckoutPage() {
         checkoutTotal={checkoutTotal}
         selectedIdentificationType={selectedIdentificationType}
         selectedPaymentMethod={selectedPaymentMethod}
+        canPrintDocuments={Boolean(authorizedSriInvoiceId)}
+        canResetCheckout={canResetCheckout}
         saving={saving}
+        onPrintRide={() => {
+          if (!authorizedSriInvoiceId) return;
+          window.open(`/api/v1/sri-invoices/${authorizedSriInvoiceId}/ride`, "_blank", "noopener,noreferrer");
+        }}
+        onPrintXml={() => {
+          if (!authorizedSriInvoiceId) return;
+          window.open(`/api/v1/sri-invoices/${authorizedSriInvoiceId}/xml`, "_blank", "noopener,noreferrer");
+        }}
+        onResetCheckout={onResetCheckout}
         onCheckout={onCheckout}
         onOpenCustomerPicker={openCustomerPicker}
         onOpenProductPicker={openProductPicker}

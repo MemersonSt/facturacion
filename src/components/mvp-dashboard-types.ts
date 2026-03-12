@@ -34,6 +34,7 @@ export type Customer = {
 
 export type SriInvoice = {
   id: string;
+  externalInvoiceId?: string | null;
   saleNumber: string;
   status: "DRAFT" | "AUTHORIZED" | "PENDING_SRI" | "ERROR";
   retryCount: number;

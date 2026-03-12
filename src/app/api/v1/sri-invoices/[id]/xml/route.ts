@@ -7,8 +7,13 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   try {
     const { id } = await params;
 
-    const invoice = await prisma.sriInvoice.findUnique({
-      where: { id },
+    const invoice = await prisma.sriInvoice.findFirst({
+      where: {
+        OR: [
+          { id },
+          { externalInvoiceId: id },
+        ],
+      },
       include: { documents: true },
     });
 

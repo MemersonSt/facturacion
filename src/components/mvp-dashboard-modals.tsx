@@ -573,6 +573,10 @@ type InvoiceDetailModalProps = {
 
 export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailModalProps) {
   if (!isOpen || !invoice) return null;
+  const serviceInvoiceId = invoice.externalInvoiceId ?? invoice.id;
+  const isAuthorized = invoice.status === "AUTHORIZED";
+  const canDownloadXml = isAuthorized && Boolean(serviceInvoiceId);
+  const canDownloadRide = isAuthorized && Boolean(serviceInvoiceId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
@@ -686,37 +690,36 @@ export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailMo
             </div>
           </section>
 
-          {invoice.documents && (
-            <section className="mt-6 rounded-lg bg-slate-50 p-4">
-              <h4 className="mb-2 font-medium text-slate-800">Archivos Generados</h4>
-              <div className="flex gap-4 text-sm">
-                {invoice.documents.xmlAuthorizedPath ? (
-                  <a
-                    href={`/api/v1/sri-invoices/${invoice.id}/xml`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    Descargar XML
-                  </a>
-                ) : (
-                  <span className="text-slate-400">XML no disponible</span>
-                )}
-                {invoice.documents.ridePdfPath ? (
-                  <a
-                    href={`/api/v1/sri-invoices/${invoice.id}/ride`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    Descargar RIDE (PDF)
-                  </a>
-                ) : (
-                  <span className="text-slate-400">RIDE no disponible</span>
-                )}
-              </div>
-            </section>
-          )}
+          <section className="mt-6 rounded-lg bg-slate-50 p-4">
+            <h4 className="mb-2 font-medium text-slate-800">Reimpresion de Comprobantes</h4>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canDownloadRide}
+                onClick={() => {
+                  if (!canDownloadRide) return;
+                  window.open(`/api/v1/sri-invoices/${serviceInvoiceId}/ride`, "_blank", "noopener,noreferrer");
+                }}
+              >
+                Descargar PDF
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canDownloadXml}
+                onClick={() => {
+                  if (!canDownloadXml) return;
+                  window.open(`/api/v1/sri-invoices/${serviceInvoiceId}/xml`, "_blank", "noopener,noreferrer");
+                }}
+              >
+                Descargar XML
+              </Button>
+            </div>
+            {!isAuthorized ? (
+              <p className="mt-2 text-xs text-slate-500">Se habilitan cuando la factura esta autorizada.</p>
+            ) : null}
+          </section>
         </div>
         
         <div className="border-t border-slate-100 p-4 text-right">
