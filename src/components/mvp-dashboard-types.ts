@@ -35,6 +35,10 @@ export type Customer = {
 export type SriInvoice = {
   id: string;
   externalInvoiceId?: string | null;
+  secuencial?: string | null;
+  createdAt?: string;
+  authorizedAt?: string | null;
+  saleStatus?: "COMPLETED" | "CANCELLED";
   saleNumber: string;
   status: "DRAFT" | "AUTHORIZED" | "PENDING_SRI" | "ERROR";
   retryCount: number;
@@ -79,6 +83,8 @@ export type SalePaymentDetail = {
 
 export type SriInvoiceDetail = SriInvoice & {
   sale: {
+    id: string;
+    status: "COMPLETED" | "CANCELLED";
     customer: Customer;
     items: SaleItemDetail[];
     payments: SalePaymentDetail[];
@@ -97,7 +103,64 @@ export type SriInvoiceDetail = SriInvoice & {
   sriAuthorizationStatus?: string | null;
 };
 
-export type SectionKey = "overview" | "products" | "inventory" | "checkout" | "sri";
+export type QuoteStatus = "OPEN" | "CONVERTED" | "CANCELLED";
+
+export type Quote = {
+  id: string;
+  quoteNumber: string;
+  status: QuoteStatus;
+  issuerId: string;
+  fechaEmision: string;
+  moneda: string;
+  formaPago: string;
+  subtotal: number;
+  discountTotal: number;
+  taxTotal: number;
+  total: number;
+  notes?: string | null;
+  convertedSaleId?: string | null;
+  customerName: string;
+  customerIdentification: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type QuoteDetailItem = {
+  id: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  cantidad: number;
+  precioUnitario: number;
+  descuento: number;
+  tarifaIva: number;
+  subtotal: number;
+  valorIva: number;
+  total: number;
+};
+
+export type QuoteConvertedInvoice = {
+  sriInvoiceId: string;
+  externalInvoiceId?: string | null;
+  status: "DRAFT" | "AUTHORIZED" | "PENDING_SRI" | "ERROR";
+  secuencial?: string | null;
+};
+
+export type QuoteDetail = Quote & {
+  customer: {
+    id: string;
+    tipoIdentificacion: string;
+    identificacion: string;
+    razonSocial: string;
+    direccion?: string | null;
+    email?: string | null;
+    telefono?: string | null;
+  };
+  items: QuoteDetailItem[];
+  convertedInvoice?: QuoteConvertedInvoice | null;
+};
+
+export type SectionKey = "overview" | "products" | "inventory" | "checkout" | "quotes" | "sri";
 
 export type IdentificationTypeOption = {
   code: string;

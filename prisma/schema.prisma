@@ -29,6 +29,12 @@ enum SaleStatus {
   CANCELLED
 }
 
+enum QuoteStatus {
+  OPEN
+  CONVERTED
+  CANCELLED
+}
+
 enum SriInvoiceStatus {
   DRAFT
   AUTHORIZED
@@ -57,6 +63,7 @@ model Customer {
   email              String?
   telefono           String?
   sales              Sale[]
+  quotes             Quote[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -74,6 +81,7 @@ model Product {
   activo          Boolean         @default(true)
   stockLevel      StockLevel?
   saleItems       SaleItem[]
+  quoteItems      QuoteItem[]
   stockMovements  StockMovement[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
@@ -119,10 +127,50 @@ model Sale {
   items         SaleItem[]
   payments      SalePayment[]
   sriInvoice    SriInvoice?
+  sourceQuotes  Quote[]      @relation("QuoteConvertedSale")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
   @@index([createdAt])
+}
+
+model Quote {
+  id              String      @id @default(uuid()) @db.Uuid
+  quoteNumber     BigInt      @unique @default(autoincrement())
+  customerId      String      @db.Uuid
+  customer        Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  status          QuoteStatus @default(OPEN)
+  issuerId        String      @db.Uuid
+  fechaEmision    String
+  moneda          String      @default("USD")
+  formaPago       String
+  subtotal        Decimal     @db.Decimal(12, 2)
+  discountTotal   Decimal     @db.Decimal(12, 2)
+  taxTotal        Decimal     @db.Decimal(12, 2)
+  total           Decimal     @db.Decimal(12, 2)
+  notes           String?
+  convertedSaleId String?     @db.Uuid
+  convertedSale   Sale?       @relation("QuoteConvertedSale", fields: [convertedSaleId], references: [id], onDelete: SetNull)
+  items           QuoteItem[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model QuoteItem {
+  id            String   @id @default(uuid()) @db.Uuid
+  quoteId       String   @db.Uuid
+  quote         Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  productId     String   @db.Uuid
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  cantidad      Decimal  @db.Decimal(14, 3)
+  precioUnitario Decimal @db.Decimal(12, 2)
+  descuento     Decimal  @default(0) @db.Decimal(12, 2)
+  tarifaIva     Decimal  @db.Decimal(5, 2)
+  subtotal      Decimal  @db.Decimal(12, 2)
+  valorIva      Decimal  @db.Decimal(12, 2)
+  total         Decimal  @db.Decimal(12, 2)
 }
 
 model SaleItem {

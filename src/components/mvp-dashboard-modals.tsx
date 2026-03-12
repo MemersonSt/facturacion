@@ -567,16 +567,33 @@ export function ProductPickerModal({
 
 type InvoiceDetailModalProps = {
   isOpen: boolean;
+  loading: boolean;
+  cancelling: boolean;
   invoice: SriInvoiceDetail | null;
+  onCancelSaleAndInvoice: (invoiceId: string) => void;
   onClose: () => void;
 };
 
-export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailModalProps) {
-  if (!isOpen || !invoice) return null;
-  const serviceInvoiceId = invoice.externalInvoiceId ?? invoice.id;
-  const isAuthorized = invoice.status === "AUTHORIZED";
+export function InvoiceDetailModal({
+  isOpen,
+  loading,
+  cancelling,
+  invoice,
+  onCancelSaleAndInvoice,
+  onClose,
+}: InvoiceDetailModalProps) {
+  if (!isOpen) return null;
+  const serviceInvoiceId = invoice?.externalInvoiceId ?? invoice?.id ?? "";
+  const isAuthorized = invoice?.status === "AUTHORIZED";
+  const isCancelled = invoice?.sale?.status === "CANCELLED";
   const canDownloadXml = isAuthorized && Boolean(serviceInvoiceId);
   const canDownloadRide = isAuthorized && Boolean(serviceInvoiceId);
+  const formattedCreatedAt = invoice?.createdAt
+    ? new Date(invoice.createdAt).toLocaleString("es-EC")
+    : "-";
+  const formattedAuthorizedAt = invoice?.authorizedAt
+    ? new Date(invoice.authorizedAt).toLocaleString("es-EC")
+    : "-";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
@@ -584,14 +601,31 @@ export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailMo
         <div className="flex items-center justify-between border-b border-slate-100 p-5">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Detalle Factura SRI</h3>
-            <p className="text-sm text-slate-500">Venta #{invoice.saleNumber}</p>
+            {!loading && invoice ? (
+              <p className="text-sm text-slate-500">
+                Venta #{invoice.saleNumber}
+                {invoice.secuencial ? ` · Factura ${invoice.secuencial}` : ""}
+              </p>
+            ) : null}
           </div>
           <Button variant="outline" size="sm" onClick={onClose}>
             Cerrar
           </Button>
         </div>
 
-        <div className="overflow-y-auto p-6">
+        {loading ? (
+          <div className="flex min-h-[260px] items-center justify-center p-6">
+            <div className="flex items-center gap-2 text-slate-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Cargando detalle de factura...
+            </div>
+          </div>
+        ) : !invoice ? (
+          <div className="flex min-h-[260px] items-center justify-center p-6 text-sm text-slate-500">
+            No se pudo cargar el detalle de la factura.
+          </div>
+        ) : (
+          <div className="overflow-y-auto p-6">
           <div className="grid gap-6 md:grid-cols-2">
             <section className="space-y-3 rounded-lg border border-slate-100 bg-slate-50 p-4">
               <h4 className="font-medium text-slate-800">Estado SRI</h4>
@@ -601,8 +635,26 @@ export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailMo
                   <span className="font-semibold">{invoice.status}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-slate-500">Estado venta:</span>
+                  <span className={isCancelled ? "font-semibold text-red-600" : "font-semibold text-emerald-700"}>
+                    {isCancelled ? "ANULADA" : "COMPLETADA"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-slate-500">Intentos:</span>
                   <span>{invoice.retryCount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Secuencial:</span>
+                  <span className="font-semibold">{invoice.secuencial ?? "-"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Fecha registro:</span>
+                  <span>{formattedCreatedAt}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Fecha autorizacion:</span>
+                  <span>{formattedAuthorizedAt}</span>
                 </div>
                 {invoice.authorizationNumber && (
                   <div className="flex flex-col gap-1">
@@ -720,10 +772,31 @@ export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailMo
               <p className="mt-2 text-xs text-slate-500">Se habilitan cuando la factura esta autorizada.</p>
             ) : null}
           </section>
-        </div>
+          </div>
+        )}
         
-        <div className="border-t border-slate-100 p-4 text-right">
-           <Button onClick={onClose}>Cerrar Detalle</Button>
+        <div className="flex items-center justify-between border-t border-slate-100 p-4">
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={loading || !invoice || isCancelled || cancelling}
+            onClick={() => {
+              if (!invoice) return;
+              void onCancelSaleAndInvoice(invoice.id);
+            }}
+          >
+            {cancelling ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Anulando...
+              </>
+            ) : isCancelled ? (
+              "Venta anulada"
+            ) : (
+              "Anular venta/factura"
+            )}
+          </Button>
+          <Button onClick={onClose}>Cerrar Detalle</Button>
         </div>
       </div>
     </div>

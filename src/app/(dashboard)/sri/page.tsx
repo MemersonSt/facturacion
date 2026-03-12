@@ -13,6 +13,8 @@ export default function SriPage() {
   const [invoices, setInvoices] = useState<SriInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailCancelling, setDetailCancelling] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<SriInvoiceDetail | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -64,12 +66,36 @@ export default function SriPage() {
 
   async function onViewDetails(invoiceId: string) {
     setMessage("");
+    setSelectedInvoice(null);
+    setIsDetailOpen(true);
+    setDetailLoading(true);
     try {
       const detail = await fetchJson<SriInvoiceDetail>(`/api/v1/sri-invoices/${invoiceId}`);
       setSelectedInvoice(detail);
-      setIsDetailOpen(true);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo cargar detalle de factura");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function onCancelSaleAndInvoice(invoiceId: string) {
+    if (!window.confirm("Se anulara la venta y se revertira el stock. Esta accion no se puede deshacer. ¿Deseas continuar?")) {
+      return;
+    }
+
+    setDetailCancelling(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/v1/sri-invoices/${invoiceId}/cancel`, { method: "POST" });
+      setIsDetailOpen(false);
+      setSelectedInvoice(null);
+      setMessage("Venta/factura anulada correctamente");
+      await loadInvoices();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo anular la venta/factura");
+    } finally {
+      setDetailCancelling(false);
     }
   }
 
@@ -89,8 +115,16 @@ export default function SriPage() {
       />
       <InvoiceDetailModal
         isOpen={isDetailOpen}
+        loading={detailLoading}
+        cancelling={detailCancelling}
         invoice={selectedInvoice}
-        onClose={() => setIsDetailOpen(false)}
+        onCancelSaleAndInvoice={onCancelSaleAndInvoice}
+        onClose={() => {
+          setIsDetailOpen(false);
+          setDetailLoading(false);
+          setDetailCancelling(false);
+          setSelectedInvoice(null);
+        }}
       />
     </>
   );

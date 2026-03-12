@@ -470,8 +470,11 @@ type CheckoutSectionProps = {
   canPrintDocuments: boolean;
   canResetCheckout: boolean;
   saving: boolean;
+  savingQuote: boolean;
   onPrintRide: () => void;
   onPrintXml: () => void;
+  onSaveQuote: () => void;
+  onOpenQuotesModal: () => void;
   onResetCheckout: () => void;
   onCheckout: (e: FormEvent<HTMLFormElement>) => void;
   onOpenCustomerPicker: () => void;
@@ -493,8 +496,11 @@ export function CheckoutSection({
   canPrintDocuments,
   canResetCheckout,
   saving,
+  savingQuote,
   onPrintRide,
   onPrintXml,
+  onSaveQuote,
+  onOpenQuotesModal,
   onResetCheckout,
   onCheckout,
   onOpenCustomerPicker,
@@ -753,10 +759,35 @@ export function CheckoutSection({
             </Button>
             <Button
               type="button"
+              variant="outline"
+              className="w-full"
+              onClick={onSaveQuote}
+              disabled={saving || savingQuote || linePreview.length === 0}
+            >
+              {savingQuote ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Guardando cotizacion...
+                </>
+              ) : (
+                "Guardar cotizacion"
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={onOpenQuotesModal}
+              disabled={saving || savingQuote}
+            >
+              Ver cotizaciones
+            </Button>
+            <Button
+              type="button"
               variant="secondary"
               className="w-full"
               onClick={onResetCheckout}
-              disabled={saving || !canResetCheckout}
+              disabled={saving || savingQuote || !canResetCheckout}
             >
               <RefreshCcw className="h-4 w-4" />
               Resetear todo
@@ -821,7 +852,8 @@ export function SriSection({
   onPageChange,
   onFilterChange,
 }: SriSectionProps) {
-  const canRetry = (status: string) => status === "PENDING_SRI" || status === "ERROR";
+  const canRetry = (invoice: SriInvoice) =>
+    (invoice.status === "PENDING_SRI" || invoice.status === "ERROR") && invoice.saleStatus !== "CANCELLED";
 
   return (
     <Card>
@@ -883,12 +915,15 @@ export function SriSection({
                 >
                   <div>
                     <p className="text-sm font-semibold text-slate-800">Venta #{invoice.saleNumber}</p>
-                    <p className="text-xs text-slate-500">Intentos: {invoice.retryCount}</p>
+                    <p className="text-xs text-slate-500">
+                      Intentos: {invoice.retryCount}
+                      {invoice.saleStatus === "CANCELLED" ? " · Venta anulada" : ""}
+                    </p>
                     {invoice.lastError ? <p className="text-xs text-red-600">{invoice.lastError}</p> : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={sriBadgeVariant(invoice.status)}>{SRI_STATUS_LABELS[invoice.status] ?? invoice.status}</Badge>
-                    {canRetry(invoice.status) && (
+                    {canRetry(invoice) && (
                       <Button size="sm" variant="outline" onClick={() => onRetry(invoice.id)} disabled={saving}>
                         <RefreshCcw className="h-4 w-4" /> Reintentar
                       </Button>

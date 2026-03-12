@@ -1,4 +1,4 @@
-import { SriInvoiceStatus } from "@prisma/client";
+import { Prisma, SaleStatus, SriInvoiceStatus } from "@prisma/client";
 
 import { fail, ok } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
@@ -11,9 +11,12 @@ export async function GET(request: Request) {
     const limit = Math.max(1, Number(searchParams.get("limit") || "10"));
     const skip = (page - 1) * limit;
 
-    const where =
+    const where: Prisma.SriInvoiceWhereInput =
       statusParam === "NOT_AUTHORIZED"
-        ? { status: { notIn: [SriInvoiceStatus.AUTHORIZED] } }
+        ? {
+            status: { notIn: [SriInvoiceStatus.AUTHORIZED] },
+            sale: { status: { not: SaleStatus.CANCELLED } },
+          }
         : statusParam
           ? { status: statusParam as SriInvoiceStatus }
           : {};
@@ -38,6 +41,7 @@ export async function GET(request: Request) {
       id: invoice.id,
       saleId: invoice.saleId,
       saleNumber: invoice.sale.saleNumber.toString(),
+      saleStatus: invoice.sale.status,
       externalInvoiceId: invoice.externalInvoiceId,
       secuencial: invoice.secuencial,
       status: invoice.status,

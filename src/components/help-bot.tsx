@@ -28,6 +28,11 @@ const helpMessages: Record<string, { title: string; message: string }> = {
         message:
             "¡Hora de vender! Sigue los pasos: 1. Verifica los datos de emisión. 2. Busca o selecciona el cliente. 3. Agrega los productos al carrito. Al final, presiona Confirmar.",
     },
+    quotes: {
+        title: "Cotizaciones / Proformas 📄",
+        message:
+            "Guarda propuestas sin afectar stock y conviértelas a venta cuando el cliente confirme. También puedes anular cotizaciones que ya no apliquen.",
+    },
     sri: {
         title: "Facturación Electrónica (SRI) 🧾",
         message:
@@ -46,9 +51,12 @@ export function HelpBot() {
     useEffect(() => {
         // Cuando cambia la sección, hacemos un pequeno efecto de atencion si el bot esta abierto
         if (isOpen) {
-            setIsAnimating(true);
-            const timer = setTimeout(() => setIsAnimating(false), 500);
-            return () => clearTimeout(timer);
+            const startTimer = setTimeout(() => setIsAnimating(true), 0);
+            const stopTimer = setTimeout(() => setIsAnimating(false), 500);
+            return () => {
+                clearTimeout(startTimer);
+                clearTimeout(stopTimer);
+            };
         }
     }, [activeSection, isOpen]);
 
