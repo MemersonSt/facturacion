@@ -521,6 +521,7 @@ export default function CheckoutPage() {
     selectedQuoteDetail?.convertedInvoice?.externalInvoiceId ??
     selectedQuoteDetail?.convertedInvoice?.sriInvoiceId ??
     null;
+  const canPrintQuotePdf = selectedQuoteDetail?.status === "OPEN";
   const canPrintConvertedQuote =
     selectedQuoteDetail?.status === "CONVERTED" &&
     selectedQuoteDetail?.convertedInvoice?.status === "AUTHORIZED" &&
@@ -759,13 +760,24 @@ export default function CheckoutPage() {
                       <Button
                         type="button"
                         variant="outline"
+                        disabled={!canPrintQuotePdf}
+                        onClick={() => {
+                          if (!selectedQuoteDetail) return;
+                          window.open(`/api/v1/quotes/${selectedQuoteDetail.id}/pdf`, "_blank", "noopener,noreferrer");
+                        }}
+                      >
+                        Descargar PDF cotizacion
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
                         disabled={!canPrintConvertedQuote}
                         onClick={() => {
                           if (!printableQuoteInvoiceId) return;
                           window.open(`/api/v1/sri-invoices/${printableQuoteInvoiceId}/ride`, "_blank", "noopener,noreferrer");
                         }}
                       >
-                        Descargar PDF
+                        Descargar Ride
                       </Button>
                       <Button
                         type="button"
@@ -779,8 +791,13 @@ export default function CheckoutPage() {
                         Descargar XML
                       </Button>
                     </div>
-                    {!canPrintConvertedQuote ? (
+                    {!canPrintQuotePdf ? (
                       <p className="mt-2 text-xs text-slate-500">
+                        Disponible solo en cotizaciones OPEN.
+                      </p>
+                    ) : null}
+                    {!canPrintConvertedQuote ? (
+                      <p className="mt-1 text-xs text-slate-500">
                         Solo disponible en cotizaciones convertidas con factura autorizada.
                       </p>
                     ) : null}
