@@ -1,9 +1,19 @@
 import { fail } from "@/lib/http";
 import { buildQuotePrintHtml } from "@/lib/quote-print-template";
 import { getQuoteDetail } from "@/modules/quotes/quote.service";
+import { existsSync } from "node:fs";
 import puppeteer from "puppeteer";
 
 export const runtime = "nodejs";
+
+function resolveChromeExecutablePath() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  const candidates = ["/usr/bin/chromium-browser", "/usr/bin/chromium"];
+  return candidates.find((candidate) => existsSync(candidate));
+}
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -48,6 +58,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
     const browser = await puppeteer.launch({
       headless: true,
+      executablePath: resolveChromeExecutablePath(),
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 

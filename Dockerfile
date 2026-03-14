@@ -1,5 +1,6 @@
 # Etapa 1: Instalar dependencias
 FROM node:20-alpine AS deps
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
@@ -29,6 +30,8 @@ ENV NEXT_TELEMETRY_DISABLED 1
 # Cloud Run requiere que el puerto sea configurable o usar el 8080 por defecto
 ENV PORT 8080
 ENV HOSTNAME "0.0.0.0"
+
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
