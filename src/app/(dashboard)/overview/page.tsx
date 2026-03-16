@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { fetchJson } from "@/components/mvp-dashboard-api";
 import { OverviewSection } from "@/components/mvp-dashboard-sections";
-import { type Product, type SriInvoice, type StockItem } from "@/components/mvp-dashboard-types";
+import { type PaginatedResult, type Product, type SriInvoice, type StockItem } from "@/components/mvp-dashboard-types";
 
 export default function OverviewPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -25,12 +25,12 @@ export default function OverviewPage() {
         const [productsRes, stockRes, pendingRes] = await Promise.all([
           fetchJson<Product[]>("/api/v1/products"),
           fetchJson<StockItem[]>("/api/v1/stock"),
-          fetchJson<SriInvoice[]>("/api/v1/sri-invoices?status=PENDING_SRI"),
+          fetchJson<PaginatedResult<SriInvoice>>("/api/v1/sri-invoices?status=PENDING_SRI&limit=100"),
         ]);
 
         setProducts(productsRes);
         setStock(stockRes);
-        setPendingInvoices(pendingRes);
+        setPendingInvoices(pendingRes.data);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Error al cargar datos");
       } finally {

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
 import type {
   Customer,
+  EditProductForm,
   NewProductForm,
   Product,
   SriInvoiceDetail,
@@ -119,6 +120,150 @@ export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClos
             </Button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+type EditProductModalProps = {
+  isOpen: boolean;
+  editForm: EditProductForm;
+  setEditForm: Dispatch<SetStateAction<EditProductForm>>;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+};
+
+export function EditProductModal({ isOpen, editForm, setEditForm, saving, onClose, onSubmit }: EditProductModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div className="border-b border-slate-100 p-5">
+          <h3 className="text-lg font-semibold text-slate-900">Editar Producto</h3>
+          <p className="mt-1 text-sm text-slate-600">Modifica los datos del producto. El stock se gestiona desde Inventario.</p>
+        </div>
+        <form className="grid gap-3 p-5" onSubmit={onSubmit}>
+          <div>
+            <Label htmlFor="edit-nombre">Nombre</Label>
+            <Input
+              id="edit-nombre"
+              value={editForm.nombre}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, nombre: e.target.value }))}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="edit-sku">SKU (opcional)</Label>
+              <Input
+                id="edit-sku"
+                value={editForm.sku}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, sku: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-precio">Precio</Label>
+              <Input
+                id="edit-precio"
+                type="number"
+                min="0"
+                step="0.01"
+                value={editForm.precio}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, precio: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="edit-iva">IVA %</Label>
+              <Input
+                id="edit-iva"
+                type="number"
+                min="0"
+                step="0.01"
+                value={editForm.tarifaIva}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, tarifaIva: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-min-stock">Stock minimo</Label>
+              <Input
+                id="edit-min-stock"
+                type="number"
+                min="0"
+                step="0.001"
+                value={editForm.minStock}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, minStock: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando...
+                </>
+              ) : (
+                "Guardar cambios"
+              )}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+type DeleteProductModalProps = {
+  isOpen: boolean;
+  productName: string;
+  saving: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+};
+
+export function DeleteProductModal({ isOpen, productName, saving, onClose, onConfirm }: DeleteProductModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div className="border-b border-slate-100 p-5">
+          <h3 className="text-lg font-semibold text-slate-900">Eliminar Producto</h3>
+        </div>
+        <div className="p-5">
+          <p className="text-sm text-slate-600">
+            ¿Estas seguro de que deseas desactivar el producto{" "}
+            <span className="font-semibold text-slate-900">{productName}</span>? El producto no se borrara, quedara inactivo y dejara de aparecer en el catalogo.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={onConfirm}
+              disabled={saving}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Eliminando...
+                </>
+              ) : (
+                "Desactivar"
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -422,12 +567,33 @@ export function ProductPickerModal({
 
 type InvoiceDetailModalProps = {
   isOpen: boolean;
+  loading: boolean;
+  cancelling: boolean;
   invoice: SriInvoiceDetail | null;
+  onCancelSaleAndInvoice: (invoiceId: string) => void;
   onClose: () => void;
 };
 
-export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailModalProps) {
-  if (!isOpen || !invoice) return null;
+export function InvoiceDetailModal({
+  isOpen,
+  loading,
+  cancelling,
+  invoice,
+  onCancelSaleAndInvoice,
+  onClose,
+}: InvoiceDetailModalProps) {
+  if (!isOpen) return null;
+  const serviceInvoiceId = invoice?.externalInvoiceId ?? invoice?.id ?? "";
+  const isAuthorized = invoice?.status === "AUTHORIZED";
+  const isCancelled = invoice?.sale?.status === "CANCELLED";
+  const canDownloadXml = isAuthorized && Boolean(serviceInvoiceId);
+  const canDownloadRide = isAuthorized && Boolean(serviceInvoiceId);
+  const formattedCreatedAt = invoice?.createdAt
+    ? new Date(invoice.createdAt).toLocaleString("es-EC")
+    : "-";
+  const formattedAuthorizedAt = invoice?.authorizedAt
+    ? new Date(invoice.authorizedAt).toLocaleString("es-EC")
+    : "-";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
@@ -435,14 +601,31 @@ export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailMo
         <div className="flex items-center justify-between border-b border-slate-100 p-5">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Detalle Factura SRI</h3>
-            <p className="text-sm text-slate-500">Venta #{invoice.saleNumber}</p>
+            {!loading && invoice ? (
+              <p className="text-sm text-slate-500">
+                Venta #{invoice.saleNumber}
+                {invoice.secuencial ? ` · Factura ${invoice.secuencial}` : ""}
+              </p>
+            ) : null}
           </div>
           <Button variant="outline" size="sm" onClick={onClose}>
             Cerrar
           </Button>
         </div>
 
-        <div className="overflow-y-auto p-6">
+        {loading ? (
+          <div className="flex min-h-[260px] items-center justify-center p-6">
+            <div className="flex items-center gap-2 text-slate-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Cargando detalle de factura...
+            </div>
+          </div>
+        ) : !invoice ? (
+          <div className="flex min-h-[260px] items-center justify-center p-6 text-sm text-slate-500">
+            No se pudo cargar el detalle de la factura.
+          </div>
+        ) : (
+          <div className="overflow-y-auto p-6">
           <div className="grid gap-6 md:grid-cols-2">
             <section className="space-y-3 rounded-lg border border-slate-100 bg-slate-50 p-4">
               <h4 className="font-medium text-slate-800">Estado SRI</h4>
@@ -452,8 +635,26 @@ export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailMo
                   <span className="font-semibold">{invoice.status}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-slate-500">Estado venta:</span>
+                  <span className={isCancelled ? "font-semibold text-red-600" : "font-semibold text-emerald-700"}>
+                    {isCancelled ? "ANULADA" : "COMPLETADA"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-slate-500">Intentos:</span>
                   <span>{invoice.retryCount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Secuencial:</span>
+                  <span className="font-semibold">{invoice.secuencial ?? "-"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Fecha registro:</span>
+                  <span>{formattedCreatedAt}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Fecha autorizacion:</span>
+                  <span>{formattedAuthorizedAt}</span>
                 </div>
                 {invoice.authorizationNumber && (
                   <div className="flex flex-col gap-1">
@@ -541,41 +742,61 @@ export function InvoiceDetailModal({ isOpen, invoice, onClose }: InvoiceDetailMo
             </div>
           </section>
 
-          {invoice.documents && (
-            <section className="mt-6 rounded-lg bg-slate-50 p-4">
-              <h4 className="mb-2 font-medium text-slate-800">Archivos Generados</h4>
-              <div className="flex gap-4 text-sm">
-                {invoice.documents.xmlAuthorizedPath ? (
-                  <a
-                    href={`/api/v1/sri-invoices/${invoice.id}/xml`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    Descargar XML
-                  </a>
-                ) : (
-                  <span className="text-slate-400">XML no disponible</span>
-                )}
-                {invoice.documents.ridePdfPath ? (
-                  <a
-                    href={`/api/v1/sri-invoices/${invoice.id}/ride`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    Descargar RIDE (PDF)
-                  </a>
-                ) : (
-                  <span className="text-slate-400">RIDE no disponible</span>
-                )}
-              </div>
-            </section>
-          )}
-        </div>
+          <section className="mt-6 rounded-lg bg-slate-50 p-4">
+            <h4 className="mb-2 font-medium text-slate-800">Reimpresion de Comprobantes</h4>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canDownloadRide}
+                onClick={() => {
+                  if (!canDownloadRide) return;
+                  window.open(`/api/v1/sri-invoices/${serviceInvoiceId}/ride`, "_blank", "noopener,noreferrer");
+                }}
+              >
+                Descargar PDF
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canDownloadXml}
+                onClick={() => {
+                  if (!canDownloadXml) return;
+                  window.open(`/api/v1/sri-invoices/${serviceInvoiceId}/xml`, "_blank", "noopener,noreferrer");
+                }}
+              >
+                Descargar XML
+              </Button>
+            </div>
+            {!isAuthorized ? (
+              <p className="mt-2 text-xs text-slate-500">Se habilitan cuando la factura esta autorizada.</p>
+            ) : null}
+          </section>
+          </div>
+        )}
         
-        <div className="border-t border-slate-100 p-4 text-right">
-           <Button onClick={onClose}>Cerrar Detalle</Button>
+        <div className="flex items-center justify-between border-t border-slate-100 p-4">
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={loading || !invoice || isCancelled || cancelling}
+            onClick={() => {
+              if (!invoice) return;
+              void onCancelSaleAndInvoice(invoice.id);
+            }}
+          >
+            {cancelling ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Anulando...
+              </>
+            ) : isCancelled ? (
+              "Venta anulada"
+            ) : (
+              "Anular venta/factura"
+            )}
+          </Button>
+          <Button onClick={onClose}>Cerrar Detalle</Button>
         </div>
       </div>
     </div>

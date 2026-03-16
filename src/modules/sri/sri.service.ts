@@ -1,4 +1,4 @@
-import { Prisma, SriInvoiceStatus } from "@prisma/client";
+import { Prisma, SaleStatus, SriInvoiceStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { authorizeInvoice, createInvoice } from "@/modules/sri/sri.client";
@@ -148,6 +148,13 @@ export async function pushAndAuthorizeInvoice(sriInvoiceId: string, payload: unk
 export async function retrySriInvoiceAuthorization(sriInvoiceId: string) {
   const invoice = await prisma.sriInvoice.findUnique({
     where: { id: sriInvoiceId },
+    include: {
+      sale: {
+        select: {
+          status: true,
+        },
+      },
+    },
   });
 
   if (!invoice) {
@@ -156,6 +163,10 @@ export async function retrySriInvoiceAuthorization(sriInvoiceId: string) {
 
   if (!invoice.externalInvoiceId) {
     throw new Error("La factura no tiene externalInvoiceId para reintento");
+  }
+
+  if (invoice.sale.status === SaleStatus.CANCELLED) {
+    throw new Error("No se puede reintentar una factura de una venta anulada");
   }
 
   try {
