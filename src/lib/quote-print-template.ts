@@ -33,6 +33,7 @@ type QuotePrintData = {
   numeroAutorizacion?: string;
   fechaAutorizacion?: string;
   claveAcceso?: string;
+  logoBase64?: string;
 };
 
 function escapeHtml(value: string): string {
@@ -191,7 +192,10 @@ export function buildQuotePrintHtml(data: QuotePrintData, autoPrint = false): st
 
   <table class="header-table">
     <tr>
-      <td style="width: 50%;">
+      <td style="width: 20%; padding-right: 20px;">
+        ${data.logoBase64 ? `<img src="${data.logoBase64}" alt="Logo" style="max-width: 150px; max-height: 100px;">` : ""}
+      </td>
+      <td style="width: 30%;">
         <div class="box" style="margin-left: 0; min-height: 200px;">
           <h2 style="margin: 0; font-size: 16px;">${escapeHtml(data.companyRazonSocial || "ARGSOFT")}</h2>
           ${data.companyNombreComercial ? `<p style="margin: 5px 0;"><strong>Nombre Comercial:</strong> ${escapeHtml(data.companyNombreComercial)}</p>` : ""}

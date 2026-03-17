@@ -521,8 +521,15 @@ export function CheckoutSection({
   return (
     <Card className="border-[#e8d5e5]/60">
       <CardHeader>
-        <CardTitle className="text-[#4a3c58]">Facturar Venta</CardTitle>
-        <CardDescription>Registrar la venta, validar cliente y emitir factura en un solo paso.</CardDescription>
+        <div className="flex items-center gap-4 mb-2">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm overflow-hidden p-1 border border-[#e8d5e5]/30">
+            <Image src="/logo.png" alt="Logo DOVI VELAS" width={48} height={48} className="object-contain" priority />
+          </div>
+          <div>
+            <CardTitle className="text-[#4a3c58]">Facturar Venta</CardTitle>
+            <CardDescription>Registrar la venta, validar cliente y emitir factura en un solo paso.</CardDescription>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <form className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]" onSubmit={onCheckout}>
@@ -876,11 +883,16 @@ export function SriSection({
     <Card>
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Facturas SRI</CardTitle>
-            <CardDescription>
-              {SRI_STATUS_LABELS[statusFilter] ?? statusFilter} &mdash; pagina {pagination.page} de {pagination.totalPages || 1}
-            </CardDescription>
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm overflow-hidden p-1 border border-[#e8d5e5]/30">
+              <Image src="/logo.png" alt="Logo DOVI VELAS" width={48} height={48} className="object-contain" priority />
+            </div>
+            <div>
+              <CardTitle className="text-[#4a3c58]">Facturas SRI</CardTitle>
+              <CardDescription>
+                {SRI_STATUS_LABELS[statusFilter] ?? statusFilter} &mdash; pagina {pagination.page} de {pagination.totalPages || 1}
+              </CardDescription>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select

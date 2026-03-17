@@ -1,7 +1,8 @@
 import { fail } from "@/lib/http";
 import { buildQuotePrintHtml } from "@/lib/quote-print-template";
 import { getQuoteDetail } from "@/modules/quotes/quote.service";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import puppeteer from "puppeteer";
 
 export const runtime = "nodejs";
@@ -22,6 +23,17 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
     if (quote.status !== "OPEN") {
       return fail("Solo se puede descargar PDF de cotizaciones abiertas", 400);
+    }
+
+    let logoBase64 = "";
+    try {
+      const logoPath = path.join(process.cwd(), "public", "logo.png");
+      if (existsSync(logoPath)) {
+        const logoBuffer = readFileSync(logoPath);
+        logoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`;
+      }
+    } catch (e) {
+      console.error("No se pudo cargar el logo para el PDF", e);
     }
 
     const html = buildQuotePrintHtml({
@@ -54,6 +66,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       ptoEmi: process.env.COMPANY_PTO_EMI ?? "001",
       ambiente: process.env.SRI_AMBIENTE ?? "1",
       tipoEmision: process.env.SRI_TIPO_EMISION ?? "1",
+      logoBase64,
     });
 
     const browser = await puppeteer.launch({
