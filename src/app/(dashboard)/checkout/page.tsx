@@ -130,7 +130,7 @@ export default function CheckoutPage() {
           return null;
         }
 
-        const subtotal = line.cantidad * product.precio - line.descuento;
+        const subtotal = line.cantidad * line.precioUnitario - line.descuento;
         const iva = (subtotal * product.tarifaIva) / 100;
         return {
           ...line,
@@ -275,9 +275,16 @@ export default function CheckoutPage() {
       const nextItems = [...prev];
 
       for (const productId of selectedProductIds) {
-        if (!existingIds.has(productId)) {
-          nextItems.push({ productId, cantidad: 1, descuento: 0 });
+        if (existingIds.has(productId)) {
+          continue;
         }
+
+        const product = products.find((item) => item.id === productId);
+        if (!product) {
+          continue;
+        }
+
+        nextItems.push({ productId, precioUnitario: product.precio, cantidad: 1, descuento: 0 });
       }
 
       return nextItems;
@@ -407,7 +414,7 @@ export default function CheckoutPage() {
         productId: line.productId,
         cantidad: line.cantidad,
         descuento: line.descuento,
-        precioUnitario: line.product.precio,
+        precioUnitario: line.precioUnitario,
         tarifaIva: line.product.tarifaIva,
       })),
       payments: [

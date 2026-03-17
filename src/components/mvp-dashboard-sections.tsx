@@ -639,7 +639,7 @@ export function CheckoutSection({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">3. Detalle</p>
-                  <p className="text-sm text-slate-600">Selecciona productos y ajusta cantidades/descuentos.</p>
+                  <p className="text-sm text-slate-600">Selecciona productos y ajusta precio, cantidades y descuentos.</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={onOpenProductPicker}>
                   Seleccionar productos
@@ -671,7 +671,17 @@ export function CheckoutSection({
                         <Tr key={line.productId} className="hover:bg-slate-50">
                           <Td className="font-medium">{line.product.codigo}</Td>
                           <Td>{line.product.nombre}</Td>
-                          <Td>${line.product.precio.toFixed(2)}</Td>
+                          <Td className="w-36">
+                            <Input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={line.precioUnitario}
+                              onChange={(e) => updateLineByProduct(line.productId, { precioUnitario: Number(e.target.value) || 0.01 })}
+                              className="h-9"
+                              required
+                            />
+                          </Td>
                           <Td className="w-44">
                             <div className="flex items-center gap-1">
                               <Button type="button" variant="outline" size="sm" onClick={() => incrementLineQuantity(line.productId, -1)}>

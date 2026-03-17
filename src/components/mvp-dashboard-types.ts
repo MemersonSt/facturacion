@@ -47,12 +47,14 @@ export type SriInvoice = {
 
 export type LineItem = {
   productId: string;
+  precioUnitario: number;
   cantidad: number;
   descuento: number;
 };
 
 export type LinePreviewItem = {
   productId: string;
+  precioUnitario: number;
   cantidad: number;
   descuento: number;
   product: Product;
