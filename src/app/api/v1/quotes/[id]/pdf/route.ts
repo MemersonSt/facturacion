@@ -70,17 +70,23 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       logoBase64,
     });
 
+    const executablePath = resolveChromeExecutablePath();
     const browser = await puppeteer.launch({
       headless: true,
-      executablePath: resolveChromeExecutablePath(),
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      executablePath,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
     });
 
     let pdfBuffer: Uint8Array;
     try {
       const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: "networkidle0" });
-      pdfBuffer = await page.pdf({
+      await page.setContent(html, { waitUntil: "networkidle0", timeout: 30000 });
+      const result = await page.pdf({
         format: "A4",
         printBackground: true,
         displayHeaderFooter: false,
@@ -91,18 +97,12 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
           left: "8mm",
         },
       });
+      pdfBuffer = new Uint8Array(result);
     } finally {
       await browser.close();
     }
 
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(pdfBuffer);
-        controller.close();
-      },
-    });
-
-    return new Response(stream, {
+    return new Response(pdfBuffer as any, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
@@ -111,7 +111,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       },
     });
   } catch (error) {
+    console.error("Error crítico generando PDF:", error);
     const message = error instanceof Error ? error.message : "No se pudo generar PDF de la cotizacion";
-    return fail(message, 500);
+    return fail(`Error de generación: ${message}`, 500);
   }
 }
