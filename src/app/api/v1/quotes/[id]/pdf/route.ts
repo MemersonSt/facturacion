@@ -7,7 +7,7 @@ import path from "node:path";
 import puppeteer from "puppeteer";
 
 export const runtime = "nodejs";
-const PDF_RENDER_TIMEOUT_MS = 60000;
+const PDF_RENDER_TIMEOUT_MS = 15000;
 
 function resolveChromeExecutablePath() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
@@ -72,19 +72,36 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     });
 
     const executablePath = resolveChromeExecutablePath();
+    console.info("Iniciando generacion PDF de cotizacion", {
+      quoteId: id,
+      executablePath: executablePath ?? "puppeteer-default",
+      platform: process.platform,
+      arch: process.arch,
+    });
+
     const browser = await puppeteer.launch({
       headless: true,
       executablePath,
+      protocolTimeout: 30000,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
         "--disable-gpu",
+        "--no-zygote",
+        "--disable-software-rasterizer",
+        "--font-render-hinting=none",
       ],
     });
 
     let pdfBuffer: Uint8Array;
     try {
+      browser.on("disconnected", () => {
+        console.error("Chromium se desconecto durante la generacion del PDF", {
+          quoteId: id,
+        });
+      });
+
       const page = await browser.newPage();
       await page.setJavaScriptEnabled(false);
       await page.setContent(html, {
