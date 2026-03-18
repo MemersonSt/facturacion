@@ -1,10 +1,16 @@
+import MuiButton from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import TextField from "@mui/material/TextField";
+import { DataGrid, type GridColDef, type GridRowSelectionModel } from "@mui/x-data-grid";
 import { Loader2 } from "lucide-react";
-import type { Dispatch, FormEvent, SetStateAction } from "react";
+import { useMemo, type Dispatch, type FormEvent, type SetStateAction } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
 import type {
   Customer,
   EditProductForm,
@@ -13,6 +19,40 @@ import type {
   SriInvoiceDetail,
   StockAdjustmentForm,
 } from "@/components/mvp-dashboard-types";
+
+const modalDataGridSx = {
+  border: 0,
+  minHeight: 320,
+  backgroundColor: "transparent",
+  color: "#4a3c58",
+  "--DataGrid-containerBackground": "#fdf7fb",
+  "& .MuiDataGrid-columnHeaders": {
+    borderBottom: "1px solid rgba(232, 213, 229, 0.65)",
+    minHeight: "40px !important",
+  },
+  "& .MuiDataGrid-columnHeaderTitle": {
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    fontSize: 12,
+  },
+  "& .MuiDataGrid-cell": {
+    borderColor: "rgba(232, 213, 229, 0.65)",
+    fontSize: 13,
+  },
+  "& .MuiDataGrid-row:hover": {
+    backgroundColor: "#fffafc",
+  },
+  "& .MuiDataGrid-footerContainer": {
+    borderTop: "1px solid rgba(232, 213, 229, 0.65)",
+  },
+  "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within": {
+    outline: "none",
+  },
+  "& .MuiTablePagination-root, & .MuiDataGrid-selectedRowCount": {
+    color: "#4a3c58",
+  },
+} as const;
 
 type ProductModalProps = {
   isOpen: boolean;
@@ -24,104 +64,134 @@ type ProductModalProps = {
 };
 
 export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClose, onSubmit }: ProductModalProps) {
-  if (!isOpen) {
-    return null;
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#4a3c58]/30 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl rounded-2xl border border-[#e8d5e5] bg-[#fdfcf5] shadow-xl">
-        <div className="border-b border-[#e8d5e5]/60 p-5">
-          <h3 className="text-lg font-semibold text-[#4a3c58]">Nuevo Producto</h3>
-          <p className="mt-1 text-sm text-[#4a3c58]/70">Completa la informacion base para inventario y ventas.</p>
-        </div>
-        <form className="grid gap-3 p-5" onSubmit={onSubmit}>
+    <Dialog
+      open={isOpen}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="md"
+      slotProps={{
+        backdrop: {
+          sx: {
+            backgroundColor: "rgba(74, 60, 88, 0.30)",
+            backdropFilter: "blur(4px)",
+          },
+        },
+      }}
+    >
+      <DialogTitle>Nuevo Producto</DialogTitle>
+      <DialogContent>
+        <p className="mb-5 text-sm text-[#4a3c58]/70">
+          Completa la informacion base para inventario y ventas.
+        </p>
+        <form
+          id="new-product-form"
+          className="grid gap-3"
+          onSubmit={onSubmit}
+        >
           <div>
-            <Label htmlFor="modal-nombre">Nombre</Label>
-            <Input
+            <TextField
               id="modal-nombre"
+              label="Nombre"
               value={newProduct.nombre}
               onChange={(e) => setNewProduct((prev) => ({ ...prev, nombre: e.target.value }))}
               required
+              autoFocus
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="modal-sku">SKU (opcional)</Label>
-              <Input
+              <TextField
                 id="modal-sku"
+                label="SKU (opcional)"
                 value={newProduct.sku}
                 onChange={(e) => setNewProduct((prev) => ({ ...prev, sku: e.target.value }))}
               />
             </div>
             <div>
-              <Label htmlFor="modal-precio">Precio</Label>
-              <Input
+              <TextField
                 id="modal-precio"
+                label="Precio"
                 type="number"
-                min="0"
-                step="0.01"
                 value={newProduct.precio}
                 onChange={(e) => setNewProduct((prev) => ({ ...prev, precio: e.target.value }))}
                 required
+                slotProps={{
+                  htmlInput: {
+                    min: 0,
+                    step: "0.01",
+                  },
+                }}
               />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <Label htmlFor="modal-iva">IVA %</Label>
-              <Input
+              <TextField
                 id="modal-iva"
+                label="IVA %"
                 type="number"
-                min="0"
-                step="0.01"
                 value={newProduct.tarifaIva}
                 onChange={(e) => setNewProduct((prev) => ({ ...prev, tarifaIva: e.target.value }))}
                 required
+                slotProps={{
+                  htmlInput: {
+                    min: 0,
+                    step: "0.01",
+                  },
+                }}
               />
             </div>
             <div>
-              <Label htmlFor="modal-stock-inicial">Stock inicial</Label>
-              <Input
+              <TextField
                 id="modal-stock-inicial"
+                label="Stock inicial"
                 type="number"
-                min="0"
-                step="0.001"
                 value={newProduct.stockInicial}
                 onChange={(e) => setNewProduct((prev) => ({ ...prev, stockInicial: e.target.value }))}
                 required
+                slotProps={{
+                  htmlInput: {
+                    min: 0,
+                    step: "0.001",
+                  },
+                }}
               />
             </div>
             <div>
-              <Label htmlFor="modal-min-stock">Stock minimo</Label>
-              <Input
+              <TextField
                 id="modal-min-stock"
+                label="Stock minimo"
                 type="number"
-                min="0"
-                step="0.001"
                 value={newProduct.minStock}
                 onChange={(e) => setNewProduct((prev) => ({ ...prev, minStock: e.target.value }))}
                 required
+                slotProps={{
+                  htmlInput: {
+                    min: 0,
+                    step: "0.001",
+                  },
+                }}
               />
             </div>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando...
-                </>
-              ) : (
-                "Guardar"
-              )}
-            </Button>
-          </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+      <DialogActions>
+        <MuiButton type="button" variant="outlined" onClick={onClose} disabled={saving}>
+          Cancelar
+        </MuiButton>
+        <MuiButton type="submit" form="new-product-form" variant="contained" disabled={saving}>
+          {saving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando...
+            </>
+          ) : (
+            "Guardar"
+          )}
+        </MuiButton>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -135,90 +205,114 @@ type EditProductModalProps = {
 };
 
 export function EditProductModal({ isOpen, editForm, setEditForm, saving, onClose, onSubmit }: EditProductModalProps) {
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#4a3c58]/30 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl rounded-2xl border border-[#e8d5e5] bg-[#fdfcf5] shadow-xl">
-        <div className="border-b border-[#e8d5e5]/60 p-5">
-          <h3 className="text-lg font-semibold text-[#4a3c58]">Editar Producto</h3>
-          <p className="mt-1 text-sm text-[#4a3c58]/70">Modifica los datos del producto. El stock se gestiona desde Inventario.</p>
-        </div>
-        <form className="grid gap-3 p-5" onSubmit={onSubmit}>
+    <Dialog
+      open={isOpen}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="md"
+      slotProps={{
+        backdrop: {
+          sx: {
+            backgroundColor: "rgba(74, 60, 88, 0.30)",
+            backdropFilter: "blur(4px)",
+          },
+        },
+      }}
+    >
+      <DialogTitle>Editar Producto</DialogTitle>
+      <DialogContent>
+        <p className="mb-5 text-sm text-[#4a3c58]/70">
+          Modifica los datos del producto. El stock se gestiona desde Inventario.
+        </p>
+        <form id="edit-product-form" className="grid gap-3" onSubmit={onSubmit}>
           <div>
-            <Label htmlFor="edit-nombre">Nombre</Label>
-            <Input
+            <TextField
               id="edit-nombre"
+              label="Nombre"
               value={editForm.nombre}
               onChange={(e) => setEditForm((prev) => ({ ...prev, nombre: e.target.value }))}
               required
+              autoFocus
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="edit-sku">SKU (opcional)</Label>
-              <Input
+              <TextField
                 id="edit-sku"
+                label="SKU (opcional)"
                 value={editForm.sku}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, sku: e.target.value }))}
               />
             </div>
             <div>
-              <Label htmlFor="edit-precio">Precio</Label>
-              <Input
+              <TextField
                 id="edit-precio"
+                label="Precio"
                 type="number"
-                min="0"
-                step="0.01"
                 value={editForm.precio}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, precio: e.target.value }))}
                 required
+                slotProps={{
+                  htmlInput: {
+                    min: 0,
+                    step: "0.01",
+                  },
+                }}
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="edit-iva">IVA %</Label>
-              <Input
+              <TextField
                 id="edit-iva"
+                label="IVA %"
                 type="number"
-                min="0"
-                step="0.01"
                 value={editForm.tarifaIva}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, tarifaIva: e.target.value }))}
                 required
+                slotProps={{
+                  htmlInput: {
+                    min: 0,
+                    step: "0.01",
+                  },
+                }}
               />
             </div>
             <div>
-              <Label htmlFor="edit-min-stock">Stock minimo</Label>
-              <Input
+              <TextField
                 id="edit-min-stock"
+                label="Stock minimo"
                 type="number"
-                min="0"
-                step="0.001"
                 value={editForm.minStock}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, minStock: e.target.value }))}
                 required
+                slotProps={{
+                  htmlInput: {
+                    min: 0,
+                    step: "0.001",
+                  },
+                }}
               />
             </div>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando...
-                </>
-              ) : (
-                "Guardar cambios"
-              )}
-            </Button>
-          </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+      <DialogActions>
+        <MuiButton type="button" variant="outlined" onClick={onClose} disabled={saving}>
+          Cancelar
+        </MuiButton>
+        <MuiButton type="submit" form="edit-product-form" variant="contained" disabled={saving}>
+          {saving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando...
+            </>
+          ) : (
+            "Guardar cambios"
+          )}
+        </MuiButton>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -231,41 +325,49 @@ type DeleteProductModalProps = {
 };
 
 export function DeleteProductModal({ isOpen, productName, saving, onClose, onConfirm }: DeleteProductModalProps) {
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#4a3c58]/30 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#e8d5e5] bg-[#fdfcf5] shadow-xl">
-        <div className="border-b border-[#e8d5e5]/60 p-5">
-          <h3 className="text-lg font-semibold text-[#4a3c58]">Eliminar Producto</h3>
-        </div>
-        <div className="p-5">
-          <p className="text-sm text-[#4a3c58]/80">
-            ¿Estas seguro de que deseas desactivar el producto{" "}
-            <span className="font-semibold text-[#4a3c58]">{productName}</span>? El producto no se borrara, quedara inactivo y dejara de aparecer en el catalogo.
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={onConfirm}
-              disabled={saving}
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Eliminando...
-                </>
-              ) : (
-                "Desactivar"
-              )}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <Dialog
+      open={isOpen}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="xs"
+      slotProps={{
+        backdrop: {
+          sx: {
+            backgroundColor: "rgba(74, 60, 88, 0.30)",
+            backdropFilter: "blur(4px)",
+          },
+        },
+      }}
+    >
+      <DialogTitle>Eliminar Producto</DialogTitle>
+      <DialogContent>
+        <p className="text-sm text-[#4a3c58]/80">
+          ¿Estas seguro de que deseas desactivar el producto{" "}
+          <span className="font-semibold text-[#4a3c58]">{productName}</span>? El producto no se borrara, quedara inactivo y dejara de aparecer en el catalogo.
+        </p>
+      </DialogContent>
+      <DialogActions>
+        <MuiButton type="button" variant="outlined" onClick={onClose} disabled={saving}>
+          Cancelar
+        </MuiButton>
+        <MuiButton
+          type="button"
+          variant="contained"
+          color="error"
+          onClick={onConfirm}
+          disabled={saving}
+        >
+          {saving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Eliminando...
+            </>
+          ) : (
+            "Desactivar"
+          )}
+        </MuiButton>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -389,6 +491,72 @@ export function CustomerPickerModal({
     return null;
   }
 
+  const customerColumns: GridColDef<Customer>[] = [
+    {
+      field: "tipoIdentificacion",
+      headerName: "Tipo",
+      minWidth: 90,
+      flex: 0.5,
+    },
+    {
+      field: "identificacion",
+      headerName: "Identificacion",
+      minWidth: 150,
+      flex: 0.85,
+      renderCell: (params) => (
+        <span className="font-semibold text-[#4a3c58]">{params.row.identificacion}</span>
+      ),
+    },
+    {
+      field: "razonSocial",
+      headerName: "Razon social",
+      minWidth: 220,
+      flex: 1.25,
+    },
+    {
+      field: "email",
+      headerName: "Email",
+      minWidth: 200,
+      flex: 1,
+      valueGetter: (_, row) => row.email || "-",
+    },
+    {
+      field: "telefono",
+      headerName: "Telefono",
+      minWidth: 140,
+      flex: 0.85,
+      valueGetter: (_, row) => row.telefono || "-",
+    },
+    {
+      field: "purchaseCount",
+      headerName: "Compras",
+      type: "number",
+      minWidth: 100,
+      flex: 0.55,
+      align: "right",
+      headerAlign: "right",
+    },
+    {
+      field: "actions",
+      headerName: "Accion",
+      sortable: false,
+      filterable: false,
+      disableColumnMenu: true,
+      minWidth: 140,
+      flex: 0.7,
+      renderCell: (params) => (
+        <MuiButton
+          type="button"
+          size="small"
+          variant="contained"
+          onClick={() => onSelectCustomer(params.row)}
+        >
+          Seleccionar
+        </MuiButton>
+      ),
+    },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#4a3c58]/30 backdrop-blur-sm p-4">
       <div className="w-full max-w-5xl rounded-2xl border border-[#e8d5e5] bg-[#fdfcf5] shadow-xl">
@@ -410,51 +578,28 @@ export function CustomerPickerModal({
             />
           </div>
 
-          <div className="max-h-96 overflow-auto rounded-md border border-slate-200">
-            <Table>
-              <THead>
-                <Tr>
-                  <Th>Tipo</Th>
-                  <Th>Identificacion</Th>
-                  <Th>Razon social</Th>
-                  <Th>Email</Th>
-                  <Th>Telefono</Th>
-                  <Th>Compras</Th>
-                  <Th>Accion</Th>
-                </Tr>
-              </THead>
-              <TBody>
-                {customerLoading ? (
-                  <Tr>
-                    <Td colSpan={7} className="text-slate-500">
-                      Cargando clientes...
-                    </Td>
-                  </Tr>
-                ) : customers.length === 0 ? (
-                  <Tr>
-                    <Td colSpan={7} className="text-slate-500">
-                      No se encontraron clientes con ese criterio.
-                    </Td>
-                  </Tr>
-                ) : (
-                  customers.map((customer) => (
-                    <Tr key={customer.id}>
-                      <Td>{customer.tipoIdentificacion}</Td>
-                      <Td className="font-medium">{customer.identificacion}</Td>
-                      <Td>{customer.razonSocial}</Td>
-                      <Td>{customer.email || "-"}</Td>
-                      <Td>{customer.telefono || "-"}</Td>
-                      <Td>{customer.purchaseCount}</Td>
-                      <Td>
-                        <Button type="button" size="sm" onClick={() => onSelectCustomer(customer)}>
-                          Seleccionar
-                        </Button>
-                      </Td>
-                    </Tr>
-                  ))
-                )}
-              </TBody>
-            </Table>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <DataGrid
+              rows={customers}
+              columns={customerColumns}
+              getRowId={(row) => row.id}
+              loading={customerLoading}
+              disableRowSelectionOnClick
+              disableColumnMenu
+              pageSizeOptions={[8, 15, 25]}
+              initialState={{
+                pagination: {
+                  paginationModel: { page: 0, pageSize: 8 },
+                },
+              }}
+              localeText={{
+                noRowsLabel: "No se encontraron clientes con ese criterio.",
+              }}
+              sx={{
+                ...modalDataGridSx,
+                height: 430,
+              }}
+            />
           </div>
         </div>
 
@@ -493,6 +638,64 @@ export function ProductPickerModal({
     return null;
   }
 
+  const selectionModel = useMemo<GridRowSelectionModel>(
+    () => ({
+      type: "include",
+      ids: new Set(selectedProductIds),
+    }),
+    [selectedProductIds],
+  );
+
+  const productColumns: GridColDef<Product>[] = [
+    {
+      field: "codigo",
+      headerName: "Codigo",
+      minWidth: 130,
+      flex: 0.75,
+      renderCell: (params) => (
+        <span className="font-semibold text-[#4a3c58]">{params.row.codigo}</span>
+      ),
+    },
+    {
+      field: "nombre",
+      headerName: "Producto",
+      minWidth: 240,
+      flex: 1.35,
+    },
+    {
+      field: "precio",
+      headerName: "Precio",
+      type: "number",
+      minWidth: 120,
+      flex: 0.7,
+      align: "right",
+      headerAlign: "right",
+      valueFormatter: (value) => `$${Number(value).toFixed(2)}`,
+    },
+    {
+      field: "stock",
+      headerName: "Stock",
+      type: "number",
+      minWidth: 120,
+      flex: 0.7,
+      align: "right",
+      headerAlign: "right",
+      valueFormatter: (value) => Number(value).toFixed(3),
+    },
+  ];
+
+  function onSelectionChange(model: GridRowSelectionModel) {
+    const nextIds = new Set(Array.from(model.ids, (id) => String(id)));
+    const currentIds = new Set(selectedProductIds);
+    const mergedIds = new Set([...currentIds, ...nextIds]);
+
+    for (const id of mergedIds) {
+      if (currentIds.has(id) !== nextIds.has(id)) {
+        toggleProductSelection(id);
+      }
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#4a3c58]/30 backdrop-blur-sm p-4">
       <div className="w-full max-w-4xl rounded-2xl border border-[#e8d5e5] bg-[#fdfcf5] shadow-xl">
@@ -511,42 +714,29 @@ export function ProductPickerModal({
             />
           </div>
 
-          <div className="max-h-96 overflow-auto rounded-md border border-slate-200">
-            <Table>
-              <THead>
-                <Tr>
-                  <Th>Sel.</Th>
-                  <Th>Codigo</Th>
-                  <Th>Producto</Th>
-                  <Th>Precio</Th>
-                  <Th>Stock</Th>
-                </Tr>
-              </THead>
-              <TBody>
-                {filteredProducts.length === 0 ? (
-                  <Tr>
-                    <Td colSpan={5} className="text-slate-500">
-                      No hay coincidencias con tu busqueda.
-                    </Td>
-                  </Tr>
-                ) : (
-                  filteredProducts.map((product) => {
-                    const checked = selectedProductIds.includes(product.id);
-                    return (
-                      <Tr key={product.id}>
-                        <Td>
-                          <input type="checkbox" checked={checked} onChange={() => toggleProductSelection(product.id)} />
-                        </Td>
-                        <Td className="font-medium">{product.codigo}</Td>
-                        <Td>{product.nombre}</Td>
-                        <Td>${product.precio.toFixed(2)}</Td>
-                        <Td>{product.stock.toFixed(3)}</Td>
-                      </Tr>
-                    );
-                  })
-                )}
-              </TBody>
-            </Table>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <DataGrid
+              rows={filteredProducts}
+              columns={productColumns}
+              checkboxSelection
+              keepNonExistentRowsSelected
+              disableColumnMenu
+              rowSelectionModel={selectionModel}
+              onRowSelectionModelChange={onSelectionChange}
+              pageSizeOptions={[8, 15, 25]}
+              initialState={{
+                pagination: {
+                  paginationModel: { page: 0, pageSize: 8 },
+                },
+              }}
+              localeText={{
+                noRowsLabel: "No hay coincidencias con tu busqueda.",
+              }}
+              sx={{
+                ...modalDataGridSx,
+                height: 430,
+              }}
+            />
           </div>
         </div>
         <div className="flex items-center justify-between border-t border-slate-100 p-5">
@@ -594,6 +784,61 @@ export function InvoiceDetailModal({
   const formattedAuthorizedAt = invoice?.authorizedAt
     ? new Date(invoice.authorizedAt).toLocaleString("es-EC")
     : "-";
+  const invoiceItemsColumns: GridColDef<SriInvoiceDetail["sale"]["items"][number]>[] = [
+    {
+      field: "codigo",
+      headerName: "Codigo",
+      minWidth: 140,
+      flex: 0.8,
+      valueGetter: (_, row) => row.product.codigo,
+      renderCell: (params) => (
+        <span className="font-semibold text-[#4a3c58]">{params.row.product.codigo}</span>
+      ),
+    },
+    {
+      field: "producto",
+      headerName: "Producto",
+      minWidth: 240,
+      flex: 1.4,
+      valueGetter: (_, row) => row.product.nombre,
+    },
+    {
+      field: "cantidad",
+      headerName: "Cant",
+      type: "number",
+      minWidth: 110,
+      flex: 0.6,
+      align: "right",
+      headerAlign: "right",
+      valueFormatter: (value) => Number(value).toFixed(3),
+    },
+    {
+      field: "precioUnitario",
+      headerName: "Precio Unit",
+      type: "number",
+      minWidth: 130,
+      flex: 0.7,
+      align: "right",
+      headerAlign: "right",
+      valueFormatter: (value) => `$${Number(value).toFixed(2)}`,
+    },
+    {
+      field: "total",
+      headerName: "Total",
+      type: "number",
+      minWidth: 130,
+      flex: 0.7,
+      align: "right",
+      headerAlign: "right",
+      valueFormatter: (value) => `$${Number(value).toFixed(2)}`,
+      renderCell: (params) => (
+        <span className="font-semibold text-[#4a3c58]">${Number(params.row.total).toFixed(2)}</span>
+      ),
+    },
+  ];
+  const invoiceItemsGridHeight = invoice
+    ? Math.min(Math.max(invoice.sale.items.length * 52 + 58, 220), 420)
+    : 220;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#4a3c58]/30 backdrop-blur-sm p-4">
@@ -701,29 +946,23 @@ export function InvoiceDetailModal({
 
           <section className="mt-6">
             <h4 className="mb-3 font-medium text-slate-800">Items de la Venta</h4>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <Table>
-                <THead>
-                  <Tr>
-                    <Th>Codigo</Th>
-                    <Th>Producto</Th>
-                    <Th>Cant</Th>
-                    <Th>Precio Unit</Th>
-                    <Th>Total</Th>
-                  </Tr>
-                </THead>
-                <TBody>
-                  {invoice.sale.items.map((item) => (
-                    <Tr key={item.id}>
-                      <Td className="font-medium">{item.product.codigo}</Td>
-                      <Td>{item.product.nombre}</Td>
-                      <Td>{Number(item.cantidad).toFixed(3)}</Td>
-                      <Td>${Number(item.precioUnitario).toFixed(2)}</Td>
-                      <Td className="font-semibold">${Number(item.total).toFixed(2)}</Td>
-                    </Tr>
-                  ))}
-                </TBody>
-              </Table>
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <DataGrid
+                rows={invoice.sale.items}
+                columns={invoiceItemsColumns}
+                getRowId={(row) => row.id}
+                disableColumnMenu
+                disableRowSelectionOnClick
+                hideFooter
+                sx={{
+                  ...modalDataGridSx,
+                  height: invoiceItemsGridHeight,
+                  minHeight: invoiceItemsGridHeight,
+                  "& .MuiDataGrid-footerContainer": {
+                    display: "none",
+                  },
+                }}
+              />
             </div>
           </section>
 
