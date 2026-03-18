@@ -7,6 +7,7 @@ import path from "node:path";
 import puppeteer from "puppeteer";
 
 export const runtime = "nodejs";
+const PDF_RENDER_TIMEOUT_MS = 60000;
 
 function resolveChromeExecutablePath() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
@@ -85,7 +86,13 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     let pdfBuffer: Uint8Array;
     try {
       const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: "networkidle0", timeout: 60000 });
+      await page.setJavaScriptEnabled(false);
+      await page.setContent(html, {
+        waitUntil: ["domcontentloaded", "load"],
+        timeout: PDF_RENDER_TIMEOUT_MS,
+      });
+      await page.emulateMediaType("screen");
+      await page.waitForSelector("body", { timeout: 5000 });
       const result = await page.pdf({
         format: "A4",
         printBackground: true,
