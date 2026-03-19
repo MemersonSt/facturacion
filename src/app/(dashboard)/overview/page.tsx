@@ -1,20 +1,29 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import Alert from "@mui/material/Alert";
+import CircularProgress from "@mui/material/CircularProgress";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import { useEffect, useState } from "react";
 
 import { fetchJson } from "@/components/mvp-dashboard-api";
-import { OverviewSection } from "@/components/mvp-dashboard-sections";
-import { type PaginatedResult, type Product, type SriInvoice, type StockItem } from "@/components/mvp-dashboard-types";
+import {
+  type PaginatedResult,
+  type Product,
+  type Quote,
+  type SriInvoice,
+  type StockItem,
+} from "@/components/mvp-dashboard-types";
+import { OverviewOperationalDashboard } from "@/features/overview/components/overview-operational-dashboard";
 
 export default function OverviewPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
+  const [openQuotes, setOpenQuotes] = useState<Quote[]>([]);
   const [pendingInvoices, setPendingInvoices] = useState<SriInvoice[]>([]);
+  const [errorInvoices, setErrorInvoices] = useState<SriInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-
-  const lowStockCount = useMemo(() => stock.filter((item) => item.lowStock).length, [stock]);
 
   useEffect(() => {
     async function loadData() {
@@ -22,15 +31,19 @@ export default function OverviewPage() {
       setMessage("");
 
       try {
-        const [productsRes, stockRes, pendingRes] = await Promise.all([
+        const [productsRes, stockRes, openQuotesRes, pendingRes, errorRes] = await Promise.all([
           fetchJson<Product[]>("/api/v1/products"),
           fetchJson<StockItem[]>("/api/v1/stock"),
+          fetchJson<Quote[]>("/api/v1/quotes?status=OPEN"),
           fetchJson<PaginatedResult<SriInvoice>>("/api/v1/sri-invoices?status=PENDING_SRI&limit=100"),
+          fetchJson<PaginatedResult<SriInvoice>>("/api/v1/sri-invoices?status=ERROR&limit=100"),
         ]);
 
         setProducts(productsRes);
         setStock(stockRes);
+        setOpenQuotes(openQuotesRes);
         setPendingInvoices(pendingRes.data);
+        setErrorInvoices(errorRes.data);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Error al cargar datos");
       } finally {
@@ -43,21 +56,36 @@ export default function OverviewPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-4 text-slate-600">
-        <Loader2 className="h-4 w-4 animate-spin" /> Cargando resumen...
-      </div>
+      <Paper sx={{ borderRadius: "20px", px: 3, py: 2.5 }}>
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ color: "#4a3c58" }}>
+          <CircularProgress size={18} thickness={5} />
+          <span className="text-sm font-medium">Cargando centro operativo...</span>
+        </Stack>
+      </Paper>
     );
   }
 
   return (
-    <>
-      <OverviewSection
+    <Stack spacing={2}>
+      {message ? (
+        <Alert
+          severity="error"
+          variant="filled"
+          sx={{
+            borderRadius: "18px",
+            boxShadow: "0 18px 38px rgba(74, 60, 88, 0.12)",
+          }}
+        >
+          {message}
+        </Alert>
+      ) : null}
+      <OverviewOperationalDashboard
         products={products}
-        lowStockCount={lowStockCount}
-        pendingInvoices={pendingInvoices}
-        checkoutTotal={0}
         stock={stock}
+        openQuotes={openQuotes}
+        pendingInvoices={pendingInvoices}
+        errorInvoices={errorInvoices}
       />
-    </>
+    </Stack>
   );
 }
