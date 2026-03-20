@@ -1,5 +1,5 @@
 import { fail, ok } from "@/lib/http";
-import { cancelSaleBySriInvoiceId } from "@/modules/sales/cancel.service";
+import { cancelSaleBySriInvoiceId } from "@/services/sales/cancel.service";
 
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/http";
-import { adjustStock } from "@/modules/inventory/inventory.service";
+import { adjustStock } from "@/services/inventory/inventory.service";
 
 export async function POST(request: Request) {
   try {

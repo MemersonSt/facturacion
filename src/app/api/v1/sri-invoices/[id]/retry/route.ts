@@ -1,5 +1,5 @@
 import { fail, ok } from "@/lib/http";
-import { retrySriInvoiceAuthorization } from "@/modules/sri/sri.service";
+import { retrySriInvoiceAuthorization } from "@/services/sri/sri.service";
 
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
