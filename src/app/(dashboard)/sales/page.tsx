@@ -10,9 +10,9 @@ import { CustomerPickerModal, ProductPickerModal } from "@/components/mvp-dashbo
 import {
   SalesMessagePopover,
   type SalesMessage,
-} from "@/features/sales/components/sales-message-popover";
-import { OpenQuotesDialog } from "@/features/sales/components/open-quotes-dialog";
-import { SalesCheckoutSection } from "@/features/sales/components/sales-checkout-section";
+} from "@/modules/sales/components/sales-message-popover";
+import { OpenQuotesDialog } from "@/modules/sales/components/open-quotes-dialog";
+import { SalesCheckoutSection } from "@/modules/sales/components/sales-checkout-section";
 import {
   IDENTIFICATION_TYPES,
   PAYMENT_METHODS,

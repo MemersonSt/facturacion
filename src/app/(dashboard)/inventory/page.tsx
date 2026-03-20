@@ -9,8 +9,8 @@ import { useEffect, useState } from "react";
 
 import { fetchJson } from "@/components/mvp-dashboard-api";
 import { type Product, type StockAdjustmentForm, type StockItem } from "@/components/mvp-dashboard-types";
-import { InventoryAdjustmentModal } from "@/features/inventory/components/inventory-adjustment-modal";
-import { InventorySection } from "@/features/inventory/components/inventory-section";
+import { InventoryAdjustmentModal } from "@/modules/inventory/components/inventory-adjustment-modal";
+import { InventorySection } from "@/modules/inventory/components/inventory-section";
 
 type InventoryToast = {
   message: string;

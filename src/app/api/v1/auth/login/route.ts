@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { loginSchema, verifyCredentials } from "@/modules/auth/auth.service";
+import { loginSchema, verifyCredentials } from "@/services/auth/auth.service";
 import { cookies } from "next/headers";
 
 export async function POST(request: Request) {

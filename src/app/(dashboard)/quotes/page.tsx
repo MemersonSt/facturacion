@@ -12,7 +12,7 @@ import type { Quote, QuoteStatus } from "@/components/mvp-dashboard-types";
 import {
   QuotesSection,
   type QuoteFilter,
-} from "@/features/quotes/components/quotes-section";
+} from "@/modules/quotes/components/quotes-section";
 
 type QuotesToast = {
   message: string;

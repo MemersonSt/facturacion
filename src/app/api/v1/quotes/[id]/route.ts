@@ -1,5 +1,5 @@
 import { fail, ok } from "@/lib/http";
-import { getQuoteDetail, updateQuote } from "@/modules/quotes/quote.service";
+import { getQuoteDetail, updateQuote } from "@/services/quotes/quote.service";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

@@ -14,7 +14,7 @@ import {
   type SriInvoice,
   type StockItem,
 } from "@/components/mvp-dashboard-types";
-import { OverviewOperationalDashboard } from "@/features/overview/components/overview-operational-dashboard";
+import { OverviewOperationalDashboard } from "@/modules/overview/components/overview-operational-dashboard";
 
 export default function OverviewPage() {
   const [products, setProducts] = useState<Product[]>([]);

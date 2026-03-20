@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/http";
-import { deactivateProduct, updateProduct } from "@/modules/inventory/inventory.service";
+import { deactivateProduct, updateProduct } from "@/services/inventory/inventory.service";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

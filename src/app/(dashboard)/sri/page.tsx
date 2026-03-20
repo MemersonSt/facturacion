@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { fetchJson } from "@/components/mvp-dashboard-api";
 import { InvoiceDetailModal } from "@/components/mvp-dashboard-modals";
 import { type PaginatedResult, type SriInvoice, type SriInvoiceDetail } from "@/components/mvp-dashboard-types";
-import { SriSection } from "@/features/sri/components/sri-section";
+import { SriSection } from "@/modules/sri/components/sri-section";
 
 export type SriStatusFilter = "NOT_AUTHORIZED" | "ALL" | "DRAFT" | "AUTHORIZED" | "PENDING_SRI" | "ERROR";
 

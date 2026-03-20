@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/http";
-import { createQuote, listQuotes } from "@/modules/quotes/quote.service";
+import { createQuote, listQuotes } from "@/services/quotes/quote.service";
 
 export async function GET(request: Request) {
   try {

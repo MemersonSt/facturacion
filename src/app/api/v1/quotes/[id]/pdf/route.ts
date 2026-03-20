@@ -1,5 +1,5 @@
 import { fail } from "@/lib/http";
-import { getQuoteDetail } from "@/modules/quotes/quote.service";
+import { getQuoteDetail } from "@/services/quotes/quote.service";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
