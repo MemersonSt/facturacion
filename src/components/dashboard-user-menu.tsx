@@ -1,9 +1,17 @@
 "use client";
 
+import Avatar from "@mui/material/Avatar";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
+import Paper from "@mui/material/Paper";
+import Popover from "@mui/material/Popover";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import { LogOut, Shield, User2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-
-import { LogoutButton } from "@/components/logout-button";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 type DashboardUserMenuProps = {
   name: string;
@@ -17,104 +25,273 @@ function initialsFromName(name: string) {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-export function DashboardUserMenu({ name, roleLabel }: DashboardUserMenuProps) {
-  const [open, setOpen] = useState(false);
-  const panelRef = useRef<HTMLDivElement | null>(null);
+export function DashboardUserMenu({
+  name,
+  roleLabel,
+}: DashboardUserMenuProps) {
+  const router = useRouter();
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const initials = initialsFromName(name);
+  const open = Boolean(anchorEl);
 
-  useEffect(() => {
-    function handlePointerDown(event: PointerEvent) {
-      if (!panelRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    }
-
-    if (!open) return;
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
+  async function handleLogout() {
+    await fetch("/api/v1/auth/logout", { method: "POST" });
+    setAnchorEl(null);
+    router.replace("/login");
+  }
 
   return (
-    <div ref={panelRef} className="relative">
-      <button
-        type="button"
+    <>
+      <IconButton
         aria-label="Abrir opciones de usuario"
         aria-expanded={open}
-        onClick={() => setOpen((prev) => !prev)}
-        className="group relative flex h-13 w-13 items-center justify-center rounded-full border border-white/70 bg-white/82 shadow-[0_14px_32px_rgba(0,0,0,0.08)] backdrop-blur-xl transition-all hover:scale-[1.02] hover:bg-white"
+        onClick={(event) => setAnchorEl(event.currentTarget)}
+        sx={{
+          position: "relative",
+          width: 52,
+          height: 52,
+          border: "1px solid rgba(255,255,255,0.72)",
+          backgroundColor: "rgba(255,255,255,0.82)",
+          backdropFilter: "blur(18px)",
+          boxShadow: "0 14px 32px rgba(0,0,0,0.08)",
+          transition: "transform 160ms ease, background-color 160ms ease",
+          "&:hover": {
+            backgroundColor: "#ffffff",
+            transform: "scale(1.02)",
+          },
+        }}
       >
-        <div className="absolute inset-0 rounded-full bg-linear-to-br from-rose-100/55 via-transparent to-purple-100/40 opacity-80" />
-        <span className="relative z-10 text-sm font-bold tracking-[0.16em] text-[#4a3c58]">{initials}</span>
-      </button>
+        <Box
+          sx={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "999px",
+            background:
+              "linear-gradient(135deg, rgba(254,205,211,0.55), transparent 52%, rgba(225,190,231,0.4))",
+            opacity: 0.9,
+          }}
+        />
+        <Typography
+          sx={{
+            position: "relative",
+            zIndex: 1,
+            fontSize: 14,
+            fontWeight: 700,
+            letterSpacing: "0.16em",
+            color: "#4a3c58",
+          }}
+        >
+          {initials}
+        </Typography>
+      </IconButton>
 
-      {open ? (
-        <>
-          <button
-            type="button"
-            aria-label="Cerrar opciones de usuario"
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-40 bg-transparent lg:hidden"
-          />
+      <Popover
+        open={open}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 1.5,
+              width: "min(22rem, calc(100vw - 1rem))",
+              overflow: "hidden",
+              borderRadius: "28px",
+              border: "1px solid rgba(255,255,255,0.72)",
+              backgroundColor: "rgba(255,255,255,0.9)",
+              backdropFilter: "blur(18px)",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
+            },
+          },
+        }}
+      >
+        <Box
+          sx={{
+            pointerEvents: "none",
+            position: "absolute",
+            insetInline: 0,
+            top: 0,
+            height: 96,
+            background:
+              "linear-gradient(135deg, rgba(254,205,211,0.55), transparent 58%, rgba(225,190,231,0.45))",
+          }}
+        />
 
-          <div className="absolute right-0 top-[calc(100%+0.75rem)] z-50 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-[28px] border border-white/70 bg-white/88 shadow-[0_20px_50px_rgba(0,0,0,0.12)] backdrop-blur-xl">
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-linear-to-br from-rose-100/55 via-transparent to-purple-100/45" />
-
-            <div className="relative z-10 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/80 bg-[#fdfcf5]/95 text-sm font-bold tracking-[0.16em] text-[#4a3c58] shadow-[0_8px_18px_rgba(0,0,0,0.06)]">
-                    {initials}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#4a3c58]/38">Sesion activa</p>
-                    <p className="truncate text-sm font-semibold text-slate-800">{name}</p>
-                    <p className="text-xs text-slate-500">{roleLabel}</p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-white/80 hover:text-slate-700"
+        <Paper
+          elevation={0}
+          sx={{
+            position: "relative",
+            zIndex: 1,
+            border: 0,
+            backgroundColor: "transparent",
+            p: 2,
+          }}
+        >
+          <Stack spacing={2}>
+            <Stack
+              direction="row"
+              spacing={1.5}
+              alignItems="flex-start"
+              justifyContent="space-between"
+            >
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Avatar
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    letterSpacing: "0.16em",
+                    color: "#4a3c58",
+                    backgroundColor: "rgba(253,252,245,0.95)",
+                    border: "1px solid rgba(255,255,255,0.82)",
+                    boxShadow: "0 8px 18px rgba(0,0,0,0.06)",
+                  }}
                 >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+                  {initials}
+                </Avatar>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography
+                    sx={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: "0.18em",
+                      textTransform: "uppercase",
+                      color: "rgba(74, 60, 88, 0.38)",
+                    }}
+                  >
+                    Sesion activa
+                  </Typography>
+                  <Typography
+                    sx={{
+                      color: "#1f2937",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {name}
+                  </Typography>
+                  <Typography
+                    sx={{
+                      color: "rgba(74, 60, 88, 0.65)",
+                      fontSize: 12,
+                    }}
+                  >
+                    {roleLabel}
+                  </Typography>
+                </Box>
+              </Stack>
 
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center gap-2 rounded-2xl border border-[#e8d5e5]/65 bg-[#fdfcf5]/82 px-3 py-2.5 text-sm text-[#4a3c58]">
-                  <User2 className="h-4 w-4 text-[#b1a1c6]" />
-                  <span className="truncate">{name}</span>
-                </div>
-                <div className="flex items-center gap-2 rounded-2xl border border-[#e8d5e5]/65 bg-[#fdfcf5]/82 px-3 py-2.5 text-sm text-[#4a3c58]">
-                  <Shield className="h-4 w-4 text-[#b1a1c6]" />
-                  <span>{roleLabel}</span>
-                </div>
-              </div>
+              <IconButton
+                size="small"
+                onClick={() => setAnchorEl(null)}
+                sx={{
+                  color: "rgba(74, 60, 88, 0.56)",
+                  "&:hover": {
+                    backgroundColor: "rgba(255,255,255,0.8)",
+                    color: "#4a3c58",
+                  },
+                }}
+              >
+                <X className="h-4 w-4" />
+              </IconButton>
+            </Stack>
 
-              <div className="mt-4 border-t border-[#e8d5e5]/55 pt-4">
-                <div className="flex items-center justify-between rounded-2xl border border-[#e8d5e5]/65 bg-white/88 px-3 py-2.5">
-                  <div className="flex items-center gap-2 text-sm font-medium text-[#4a3c58]">
-                    <LogOut className="h-4 w-4 text-[#b1a1c6]" />
-                    <span>Cerrar sesion</span>
-                  </div>
-                  <LogoutButton />
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      ) : null}
-    </div>
+            <Stack spacing={1.25}>
+              <Paper
+                elevation={0}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  px: 1.5,
+                  py: 1.25,
+                  borderRadius: "18px",
+                  border: "1px solid rgba(232, 213, 229, 0.65)",
+                  backgroundColor: "rgba(253,252,245,0.82)",
+                }}
+              >
+                <User2 className="h-4 w-4 text-[#b1a1c6]" />
+                <Typography
+                  sx={{
+                    color: "#4a3c58",
+                    fontSize: 14,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {name}
+                </Typography>
+              </Paper>
+
+              <Paper
+                elevation={0}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  px: 1.5,
+                  py: 1.25,
+                  borderRadius: "18px",
+                  border: "1px solid rgba(232, 213, 229, 0.65)",
+                  backgroundColor: "rgba(253,252,245,0.82)",
+                }}
+              >
+                <Shield className="h-4 w-4 text-[#b1a1c6]" />
+                <Typography sx={{ color: "#4a3c58", fontSize: 14 }}>
+                  {roleLabel}
+                </Typography>
+              </Paper>
+            </Stack>
+
+            <Divider sx={{ borderColor: "rgba(232, 213, 229, 0.55)" }} />
+
+            <Paper
+              elevation={0}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1,
+                px: 1.5,
+                py: 1.25,
+                borderRadius: "18px",
+                border: "1px solid rgba(232, 213, 229, 0.65)",
+                backgroundColor: "rgba(255,255,255,0.88)",
+              }}
+            >
+              <Stack direction="row" spacing={1} alignItems="center">
+                <LogOut className="h-4 w-4 text-[#b1a1c6]" />
+                <Typography
+                  sx={{ color: "#4a3c58", fontSize: 14, fontWeight: 500 }}
+                >
+                  Cerrar sesion
+                </Typography>
+              </Stack>
+
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  void handleLogout();
+                }}
+                startIcon={<LogOut className="h-3.5 w-3.5" />}
+                sx={{
+                  minHeight: 34,
+                  px: 1.5,
+                  fontSize: 12,
+                }}
+              >
+                Salir
+              </Button>
+            </Paper>
+          </Stack>
+        </Paper>
+      </Popover>
+    </>
   );
 }
