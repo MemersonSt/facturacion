@@ -8,6 +8,7 @@ const productSelect = {
   id: true,
   secuencial: true,
   sku: true,
+  tipoProducto: true,
   nombre: true,
   descripcion: true,
   precio: true,
@@ -28,6 +29,7 @@ function productPresenter(product: Prisma.ProductGetPayload<{ select: typeof pro
     secuencial: product.secuencial.toString(),
     codigo: resolveProductCode(product.sku, product.secuencial),
     sku: normalizeProductSku(product.sku),
+    tipoProducto: product.tipoProducto,
     nombre: product.nombre,
     descripcion: product.descripcion,
     precio: Number(product.precio),
@@ -75,21 +77,22 @@ export async function createProduct(rawInput: unknown) {
   const product = await prisma.product.create({
     data: {
       sku: normalizedSku,
+      tipoProducto: input.tipoProducto,
       nombre: input.nombre,
       descripcion: input.descripcion || null,
       precio: input.precio,
       tarifaIva: input.tarifaIva,
       stockLevel: {
         create: {
-          quantity: input.stockInicial,
-          minQuantity: input.minStock,
+          quantity: input.tipoProducto === "BIEN" ? input.stockInicial : 0,
+          minQuantity: input.tipoProducto === "BIEN" ? input.minStock : 0,
         },
       },
     },
     select: productSelect,
   });
 
-  if (input.stockInicial > 0) {
+  if (input.tipoProducto === "BIEN" && input.stockInicial > 0) {
     await prisma.stockMovement.create({
       data: {
         productId: product.id,
@@ -112,16 +115,40 @@ export async function updateProduct(id: string, rawInput: unknown) {
     await ensureActiveSkuAvailable(normalizedSku, id);
   }
 
+  const existing = await prisma.product.findUnique({
+    where: { id },
+    select: {
+      tipoProducto: true,
+      stockLevel: {
+        select: {
+          quantity: true,
+        },
+      },
+    },
+  });
+
+  if (!existing) {
+    throw new Error("Producto no encontrado");
+  }
+
+  const nextTipoProducto = input.tipoProducto ?? existing.tipoProducto;
+  const currentStock = Number(existing.stockLevel?.quantity ?? 0);
+
+  if (existing.tipoProducto === "BIEN" && nextTipoProducto === "SERVICIO" && currentStock > 0) {
+    throw new Error("No se puede cambiar a servicio mientras el producto tenga stock disponible");
+  }
+
   const product = await prisma.product.update({
     where: { id },
     data: {
       ...(input.sku !== undefined ? { sku: normalizedSku } : {}),
+      ...(input.tipoProducto !== undefined ? { tipoProducto: input.tipoProducto } : {}),
       ...(input.nombre !== undefined ? { nombre: input.nombre } : {}),
       ...(input.descripcion !== undefined ? { descripcion: input.descripcion || null } : {}),
       ...(input.precio !== undefined ? { precio: input.precio } : {}),
       ...(input.tarifaIva !== undefined ? { tarifaIva: input.tarifaIva } : {}),
-      ...(input.minStock !== undefined
-        ? { stockLevel: { update: { minQuantity: input.minStock } } }
+      ...((input.minStock !== undefined || nextTipoProducto === "SERVICIO")
+        ? { stockLevel: { update: { minQuantity: nextTipoProducto === "SERVICIO" ? 0 : (input.minStock ?? 0) } } }
         : {}),
     },
     select: productSelect,
@@ -152,7 +179,14 @@ export async function listStock() {
           nombre: true,
           sku: true,
           secuencial: true,
+          tipoProducto: true,
         },
+      },
+    },
+    where: {
+      product: {
+        activo: true,
+        tipoProducto: "BIEN",
       },
     },
     orderBy: {
@@ -186,6 +220,10 @@ export async function adjustStock(rawInput: unknown) {
 
     if (!stockLevel) {
       throw new Error("No existe stock para este producto");
+    }
+
+    if (stockLevel.product.tipoProducto === "SERVICIO") {
+      throw new Error("Los servicios no manejan inventario");
     }
 
     const currentQty = Number(stockLevel.quantity);

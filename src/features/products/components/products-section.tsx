@@ -1,4 +1,5 @@
 import IconButton from "@mui/material/IconButton";
+import Chip from "@mui/material/Chip";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { PackagePlus, Pencil, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -40,7 +41,8 @@ export function ProductsSection({
       (product) =>
         product.nombre.toLowerCase().includes(q) ||
         (product.sku ?? "").toLowerCase().includes(q) ||
-        product.codigo.toLowerCase().includes(q),
+        product.codigo.toLowerCase().includes(q) ||
+        product.tipoProducto.toLowerCase().includes(q),
     );
   }, [products, search]);
 
@@ -64,6 +66,33 @@ export function ProductsSection({
         headerName: "Nombre",
         minWidth: 260,
         flex: 1.6,
+      },
+      {
+        field: "tipoProducto",
+        headerName: "Tipo",
+        minWidth: 135,
+        flex: 0.7,
+        renderCell: (params) => (
+          <Chip
+            label={params.row.tipoProducto === "SERVICIO" ? "Servicio" : "Bien"}
+            size="small"
+            sx={{
+              borderRadius: "999px",
+              fontWeight: 700,
+              ...(params.row.tipoProducto === "SERVICIO"
+                ? {
+                    backgroundColor: "#eff6ff",
+                    color: "#1d4ed8",
+                    border: "1px solid #bfdbfe",
+                  }
+                : {
+                    backgroundColor: "#ecfdf3",
+                    color: "#15803d",
+                    border: "1px solid #86efac",
+                  }),
+            }}
+          />
+        ),
       },
       {
         field: "precio",
@@ -93,7 +122,13 @@ export function ProductsSection({
         flex: 0.7,
         align: "right",
         headerAlign: "right",
-        valueFormatter: (value) => Number(value).toFixed(3),
+        renderCell: (params) => (
+          <span className="w-full text-right">
+            {params.row.tipoProducto === "SERVICIO"
+              ? "-"
+              : Number(params.row.stock).toFixed(3)}
+          </span>
+        ),
       },
       {
         field: "actions",

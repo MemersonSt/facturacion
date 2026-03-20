@@ -1,7 +1,10 @@
 import { z } from "zod";
 
+const productTypeSchema = z.enum(["BIEN", "SERVICIO"]);
+
 export const createProductSchema = z.object({
   sku: z.string().trim().max(40).optional().or(z.literal("")),
+  tipoProducto: productTypeSchema.default("BIEN"),
   nombre: z.string().trim().min(2).max(180),
   descripcion: z.string().trim().max(500).optional().or(z.literal("")),
   precio: z.number().positive(),
@@ -12,6 +15,7 @@ export const createProductSchema = z.object({
 
 export const updateProductSchema = z.object({
   sku: z.string().trim().max(40).optional().or(z.literal("")),
+  tipoProducto: productTypeSchema.optional(),
   nombre: z.string().trim().min(2).max(180).optional(),
   descripcion: z.string().trim().max(500).optional().or(z.literal("")),
   precio: z.number().positive().optional(),

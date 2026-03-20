@@ -23,13 +23,14 @@ import {
 } from "lucide-react";
 import { useMemo, type Dispatch, type FormEvent, type SetStateAction } from "react";
 
-import type {
-  Customer,
-  EditProductForm,
-  NewProductForm,
-  Product,
-  SriInvoiceDetail,
-  StockAdjustmentForm,
+import {
+  PRODUCT_TYPE_OPTIONS,
+  type Customer,
+  type EditProductForm,
+  type NewProductForm,
+  type Product,
+  type SriInvoiceDetail,
+  type StockAdjustmentForm,
 } from "@/components/mvp-dashboard-types";
 
 const modalDataGridSx = {
@@ -64,6 +65,8 @@ type ProductModalProps = {
 };
 
 export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClose, onSubmit }: ProductModalProps) {
+  const isService = newProduct.tipoProducto === "SERVICIO";
+
   return (
     <Dialog
       open={isOpen}
@@ -82,7 +85,7 @@ export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClos
           className="grid gap-3"
           onSubmit={onSubmit}
         >
-          <div>
+          <div className="grid grid-cols-2 gap-3">
             <TextField
               id="modal-nombre"
               label="Nombre"
@@ -91,6 +94,28 @@ export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClos
               required
               autoFocus
             />
+            <TextField
+              select
+              id="modal-tipo-producto"
+              label="Tipo"
+              value={newProduct.tipoProducto}
+              onChange={(e) =>
+                setNewProduct((prev) => ({
+                  ...prev,
+                  tipoProducto: e.target.value as NewProductForm["tipoProducto"],
+                  ...(e.target.value === "SERVICIO"
+                    ? { stockInicial: "0", minStock: "0" }
+                    : {}),
+                }))
+              }
+              required
+            >
+              {PRODUCT_TYPE_OPTIONS.map((option) => (
+                <MenuItem key={option.code} value={option.code}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -143,6 +168,7 @@ export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClos
                 value={newProduct.stockInicial}
                 onChange={(e) => setNewProduct((prev) => ({ ...prev, stockInicial: e.target.value }))}
                 required
+                disabled={isService}
                 slotProps={{
                   htmlInput: {
                     min: 0,
@@ -159,6 +185,7 @@ export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClos
                 value={newProduct.minStock}
                 onChange={(e) => setNewProduct((prev) => ({ ...prev, minStock: e.target.value }))}
                 required
+                disabled={isService}
                 slotProps={{
                   htmlInput: {
                     min: 0,
@@ -168,6 +195,11 @@ export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClos
               />
             </div>
           </div>
+          {isService ? (
+            <p className="text-xs text-[#4a3c58]/62">
+              Los servicios no generan stock ni alertas de inventario.
+            </p>
+          ) : null}
         </form>
       </DialogContent>
       <DialogActions>
@@ -202,6 +234,8 @@ type EditProductModalProps = {
 };
 
 export function EditProductModal({ isOpen, editForm, setEditForm, saving, onClose, onSubmit }: EditProductModalProps) {
+  const isService = editForm.tipoProducto === "SERVICIO";
+
   return (
     <Dialog
       open={isOpen}
@@ -216,7 +250,7 @@ export function EditProductModal({ isOpen, editForm, setEditForm, saving, onClos
           Modifica los datos del producto. El stock se gestiona desde Inventario.
         </p>
         <form id="edit-product-form" className="grid gap-3" onSubmit={onSubmit}>
-          <div>
+          <div className="grid grid-cols-2 gap-3">
             <TextField
               id="edit-nombre"
               label="Nombre"
@@ -225,6 +259,26 @@ export function EditProductModal({ isOpen, editForm, setEditForm, saving, onClos
               required
               autoFocus
             />
+            <TextField
+              select
+              id="edit-tipo-producto"
+              label="Tipo"
+              value={editForm.tipoProducto}
+              onChange={(e) =>
+                setEditForm((prev) => ({
+                  ...prev,
+                  tipoProducto: e.target.value as EditProductForm["tipoProducto"],
+                  ...(e.target.value === "SERVICIO" ? { minStock: "0" } : {}),
+                }))
+              }
+              required
+            >
+              {PRODUCT_TYPE_OPTIONS.map((option) => (
+                <MenuItem key={option.code} value={option.code}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -270,16 +324,17 @@ export function EditProductModal({ isOpen, editForm, setEditForm, saving, onClos
               />
             </div>
             <div>
-              <TextField
-                id="edit-min-stock"
-                label="Stock minimo"
-                type="number"
-                value={editForm.minStock}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, minStock: e.target.value }))}
-                required
-                slotProps={{
-                  htmlInput: {
-                    min: 0,
+            <TextField
+              id="edit-min-stock"
+              label="Stock minimo"
+              type="number"
+              value={editForm.minStock}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, minStock: e.target.value }))}
+              required
+              disabled={isService}
+              slotProps={{
+                htmlInput: {
+                  min: 0,
                     step: "0.001",
                   },
                 }}
@@ -669,6 +724,13 @@ export function ProductPickerModal({
       flex: 1.35,
     },
     {
+      field: "tipoProducto",
+      headerName: "Tipo",
+      minWidth: 125,
+      flex: 0.65,
+      valueFormatter: (value) => (value === "SERVICIO" ? "Servicio" : "Bien"),
+    },
+    {
       field: "precio",
       headerName: "Precio",
       type: "number",
@@ -686,7 +748,13 @@ export function ProductPickerModal({
       flex: 0.7,
       align: "right",
       headerAlign: "right",
-      valueFormatter: (value) => Number(value).toFixed(3),
+      renderCell: (params) => (
+        <span className="w-full text-right">
+          {params.row.tipoProducto === "SERVICIO"
+            ? "-"
+            : Number(params.row.stock).toFixed(3)}
+        </span>
+      ),
     },
   ];
 

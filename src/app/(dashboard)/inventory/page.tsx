@@ -40,7 +40,7 @@ export default function InventoryPage() {
       ]);
 
       setStock(stockRes);
-      setProducts(productsRes);
+      setProducts(productsRes.filter((product) => product.tipoProducto === "BIEN"));
     } catch (error) {
       setToast({
         message:

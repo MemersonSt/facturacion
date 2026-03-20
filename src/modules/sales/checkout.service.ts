@@ -130,6 +130,11 @@ export async function checkout(rawInput: unknown) {
 
     const aggregateQty = new Map<string, number>();
     for (const item of input.items) {
+      const product = productMap.get(item.productId);
+      if (product?.tipoProducto !== "BIEN") {
+        continue;
+      }
+
       aggregateQty.set(item.productId, (aggregateQty.get(item.productId) ?? 0) + item.cantidad);
     }
 
@@ -220,16 +225,22 @@ export async function checkout(rawInput: unknown) {
       })),
     });
 
-    await tx.stockMovement.createMany({
-      data: lineComputations.map((line) => ({
+    const stockMovements = lineComputations
+      .filter((line) => line.product.tipoProducto === "BIEN")
+      .map((line) => ({
         productId: line.product.id,
-        movementType: "OUT",
+        movementType: "OUT" as const,
         referenceType: ReferenceType.SALE,
         referenceId: sale.id,
         quantity: line.quantity,
         notes: `Salida por venta #${sale.saleNumber.toString()}`,
-      })),
-    });
+      }));
+
+    if (stockMovements.length > 0) {
+      await tx.stockMovement.createMany({
+        data: stockMovements,
+      });
+    }
 
     const invoicePayload = toInvoicePayload(input, {
       customer: {

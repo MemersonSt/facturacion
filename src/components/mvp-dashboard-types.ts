@@ -1,7 +1,10 @@
+export type ProductType = "BIEN" | "SERVICIO";
+
 export type Product = {
   id: string;
   codigo: string;
   sku: string | null;
+  tipoProducto: ProductType;
   nombre: string;
   descripcion: string | null;
   precio: number;
@@ -190,9 +193,18 @@ export const PAYMENT_METHODS: PaymentMethodOption[] = [
   { code: "15", label: "Compensacion de deudas" },
 ];
 
+export const PRODUCT_TYPE_OPTIONS: Array<{
+  code: ProductType;
+  label: string;
+}> = [
+  { code: "BIEN", label: "Bien" },
+  { code: "SERVICIO", label: "Servicio" },
+];
+
 export type NewProductForm = {
   nombre: string;
   sku: string;
+  tipoProducto: ProductType;
   precio: string;
   tarifaIva: string;
   stockInicial: string;
@@ -202,6 +214,7 @@ export type NewProductForm = {
 export type EditProductForm = {
   nombre: string;
   sku: string;
+  tipoProducto: ProductType;
   precio: string;
   tarifaIva: string;
   minStock: string;

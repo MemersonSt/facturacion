@@ -17,6 +17,7 @@ export default function ProductsPage() {
   const [newProduct, setNewProduct] = useState<NewProductForm>({
     nombre: "",
     sku: "",
+    tipoProducto: "BIEN",
     precio: "",
     tarifaIva: "15",
     stockInicial: "0",
@@ -25,7 +26,14 @@ export default function ProductsPage() {
 
   // Edit state
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [editForm, setEditForm] = useState<EditProductForm>({ nombre: "", sku: "", precio: "", tarifaIva: "15", minStock: "0" });
+  const [editForm, setEditForm] = useState<EditProductForm>({
+    nombre: "",
+    sku: "",
+    tipoProducto: "BIEN",
+    precio: "",
+    tarifaIva: "15",
+    minStock: "0",
+  });
 
   // Delete state
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
@@ -59,14 +67,23 @@ export default function ProductsPage() {
         body: JSON.stringify({
           nombre: newProduct.nombre,
           sku: newProduct.sku || undefined,
+          tipoProducto: newProduct.tipoProducto,
           precio: Number(newProduct.precio),
           tarifaIva: Number(newProduct.tarifaIva),
-          stockInicial: Number(newProduct.stockInicial),
-          minStock: Number(newProduct.minStock),
+          stockInicial: newProduct.tipoProducto === "BIEN" ? Number(newProduct.stockInicial) : 0,
+          minStock: newProduct.tipoProducto === "BIEN" ? Number(newProduct.minStock) : 0,
         }),
       });
 
-      setNewProduct({ nombre: "", sku: "", precio: "", tarifaIva: "15", stockInicial: "0", minStock: "0" });
+      setNewProduct({
+        nombre: "",
+        sku: "",
+        tipoProducto: "BIEN",
+        precio: "",
+        tarifaIva: "15",
+        stockInicial: "0",
+        minStock: "0",
+      });
       setIsProductModalOpen(false);
       setMessage("Producto creado correctamente");
       await loadProducts();
@@ -82,6 +99,7 @@ export default function ProductsPage() {
     setEditForm({
       nombre: product.nombre,
       sku: product.sku ?? "",
+      tipoProducto: product.tipoProducto,
       precio: String(product.precio),
       tarifaIva: String(product.tarifaIva),
       minStock: String(product.minStock),
@@ -101,9 +119,10 @@ export default function ProductsPage() {
         body: JSON.stringify({
           nombre: editForm.nombre,
           sku: editForm.sku || undefined,
+          tipoProducto: editForm.tipoProducto,
           precio: Number(editForm.precio),
           tarifaIva: Number(editForm.tarifaIva),
-          minStock: Number(editForm.minStock),
+          minStock: editForm.tipoProducto === "BIEN" ? Number(editForm.minStock) : 0,
         }),
       });
 
