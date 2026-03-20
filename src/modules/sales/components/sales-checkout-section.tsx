@@ -19,7 +19,7 @@ import {
   type LinePreviewItem,
   type PaymentMethodOption,
 } from "@/components/mvp-dashboard-types";
-import { DocumentWorkspaceHeader } from "@/features/shared/document-composer/components/document-workspace-header";
+import { DocumentWorkspaceHeader } from "@/modules/shared/document-composer/components/document-workspace-header";
 import Box from "@mui/material/Box";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
