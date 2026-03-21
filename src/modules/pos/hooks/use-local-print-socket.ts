@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 const LOCAL_PRINT_WS_URL =
   process.env.NEXT_PUBLIC_LOCAL_PRINT_WS_URL ?? "ws://localhost:10000/print";
 const PRINTER_STORAGE_KEY = "arg-pos-printer-name";
+const PRINT_DEBUG_PREFIX = "[POS Print WS]";
 
 type SocketAction = "GetPrinters" | "PrintDocument";
 
@@ -39,6 +40,9 @@ export function useLocalPrintSocket() {
   );
 
   function setSelectedPrinter(nextPrinter: string | null) {
+    console.log(`${PRINT_DEBUG_PREFIX} setSelectedPrinter`, {
+      nextPrinter,
+    });
     setSelectedPrinterState(nextPrinter);
 
     if (typeof window === "undefined") {
@@ -54,6 +58,10 @@ export function useLocalPrintSocket() {
   }
 
   function rejectPendingRequests(error: Error) {
+    console.error(`${PRINT_DEBUG_PREFIX} rejectPendingRequests`, {
+      message: error.message,
+      pendingRequests: pendingRequestRef.current.size,
+    });
     pendingRequestRef.current.forEach((pending) => {
       window.clearTimeout(pending.timeoutId);
       pending.reject(error);
@@ -66,6 +74,9 @@ export function useLocalPrintSocket() {
       return;
     }
 
+    console.warn(`${PRINT_DEBUG_PREFIX} scheduleReconnect`, {
+      delayMs: 1800,
+    });
     reconnectTimeoutRef.current = window.setTimeout(() => {
       reconnectTimeoutRef.current = null;
       void connect().catch(() => {
@@ -76,7 +87,9 @@ export function useLocalPrintSocket() {
 
   function handleSocketMessage(event: MessageEvent<string>) {
     try {
+      console.log(`${PRINT_DEBUG_PREFIX} message:raw`, event.data);
       const parsed = JSON.parse(event.data) as SocketEnvelope;
+      console.log(`${PRINT_DEBUG_PREFIX} message:parsed`, parsed);
 
       if (
         parsed.Action === "GetPrinters" &&
@@ -99,26 +112,32 @@ export function useLocalPrintSocket() {
       pendingRequestRef.current.delete(parsed.Action);
       pending.resolve(parsed);
     } catch {
-      // Ignore invalid socket payloads from the local service.
+      console.warn(`${PRINT_DEBUG_PREFIX} message:invalid-json`, event.data);
     }
   }
 
   function connect() {
     const current = socketRef.current;
     if (current?.readyState === WebSocket.OPEN) {
+      console.log(`${PRINT_DEBUG_PREFIX} connect:reuse-open-socket`);
       return Promise.resolve(current);
     }
 
     if (connectPromiseRef.current) {
+      console.log(`${PRINT_DEBUG_PREFIX} connect:reuse-pending-promise`);
       return connectPromiseRef.current;
     }
 
     connectPromiseRef.current = new Promise<WebSocket>((resolve, reject) => {
       try {
+        console.log(`${PRINT_DEBUG_PREFIX} connect:opening`, {
+          url: LOCAL_PRINT_WS_URL,
+        });
         const socket = new WebSocket(LOCAL_PRINT_WS_URL);
         socketRef.current = socket;
 
         socket.onopen = () => {
+          console.log(`${PRINT_DEBUG_PREFIX} socket:onopen`);
           setIsConnected(true);
           if (reconnectTimeoutRef.current) {
             window.clearTimeout(reconnectTimeoutRef.current);
@@ -132,6 +151,7 @@ export function useLocalPrintSocket() {
         };
 
         socket.onclose = () => {
+          console.warn(`${PRINT_DEBUG_PREFIX} socket:onclose`);
           setIsConnected(false);
           socketRef.current = null;
           connectPromiseRef.current = null;
@@ -142,6 +162,7 @@ export function useLocalPrintSocket() {
         };
 
         socket.onerror = () => {
+          console.error(`${PRINT_DEBUG_PREFIX} socket:onerror`);
           setIsConnected(false);
           connectPromiseRef.current = null;
           reject(
@@ -153,6 +174,7 @@ export function useLocalPrintSocket() {
 
         socket.onmessage = handleSocketMessage;
       } catch {
+        console.error(`${PRINT_DEBUG_PREFIX} connect:init-failed`);
         connectPromiseRef.current = null;
         reject(
           new Error("No se pudo inicializar el servicio local de impresion"),
@@ -197,6 +219,11 @@ export function useLocalPrintSocket() {
 
   async function sendRequest(action: SocketAction, responseModel: unknown) {
     const socket = await ensureSocket();
+    console.log(`${PRINT_DEBUG_PREFIX} request:start`, {
+      action,
+      responseModel,
+      readyState: socket.readyState,
+    });
 
     if (pendingRequestRef.current.has(action)) {
       const existing = pendingRequestRef.current.get(action);
@@ -212,6 +239,9 @@ export function useLocalPrintSocket() {
     return new Promise<SocketEnvelope>((resolve, reject) => {
       const timeoutId = window.setTimeout(() => {
         pendingRequestRef.current.delete(action);
+        console.error(`${PRINT_DEBUG_PREFIX} request:timeout`, {
+          action,
+        });
         reject(new Error("El servicio local de impresion no respondio"));
       }, 8000);
 
@@ -221,19 +251,21 @@ export function useLocalPrintSocket() {
         timeoutId,
       });
 
-      socket.send(
-        JSON.stringify({
-          Action: action,
-          StatusCode: null,
-          Message: null,
-          ResponseModel: responseModel,
-        }),
-      );
+      const payload = {
+        Action: action,
+        StatusCode: null,
+        Message: null,
+        ResponseModel: responseModel,
+      };
+
+      console.log(`${PRINT_DEBUG_PREFIX} request:send`, payload);
+      socket.send(JSON.stringify(payload));
     });
   }
 
   async function loadPrinters() {
     const response = await sendRequest("GetPrinters", null);
+    console.log(`${PRINT_DEBUG_PREFIX} loadPrinters:response`, response);
     if (response.StatusCode !== 200) {
       throw new Error(response.Message || "No se pudieron obtener impresoras");
     }
@@ -249,11 +281,17 @@ export function useLocalPrintSocket() {
     printerName: string,
     base64Document: string,
   ) {
+    console.log(`${PRINT_DEBUG_PREFIX} printBase64Document:start`, {
+      printerName,
+      base64Length: base64Document.length,
+      base64Preview: base64Document.slice(0, 64),
+    });
     const response = await sendRequest("PrintDocument", {
       namePrinter: printerName,
       documents: [base64Document],
     });
 
+    console.log(`${PRINT_DEBUG_PREFIX} printBase64Document:response`, response);
     if (response.StatusCode !== 200) {
       throw new Error(response.Message || "No se pudo imprimir el documento");
     }

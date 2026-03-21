@@ -20,6 +20,11 @@ export type PosTicketData = {
   lines: PosTicketLine[];
 };
 
+type PosTicketHtmlOptions = {
+  autoPrint?: boolean;
+  autoClose?: boolean;
+};
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -33,7 +38,12 @@ function formatMoney(value: number) {
   return value.toFixed(2);
 }
 
-export function buildPosTicketHtml(data: PosTicketData) {
+export function buildPosTicketHtml(
+  data: PosTicketData,
+  options: PosTicketHtmlOptions = {},
+) {
+  const autoPrint = options.autoPrint ?? true;
+  const autoClose = options.autoClose ?? autoPrint;
   const lines = data.lines.map((line) => `
       <tr>
         <td>
@@ -111,13 +121,37 @@ export function buildPosTicketHtml(data: PosTicketData) {
           font-size: 13px;
           padding-top: 6px;
         }
+        .print-actions {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 12px;
+        }
+        .print-actions button {
+          border: 1px solid #d1d5db;
+          background: #ffffff;
+          color: #111827;
+          border-radius: 999px;
+          padding: 8px 14px;
+          font: inherit;
+          cursor: pointer;
+        }
         @media print {
           body { padding: 0; }
+          .print-actions { display: none; }
         }
       </style>
     </head>
-    <body onload="window.print(); window.close();">
+    <body${
+      autoPrint
+        ? ` onload="window.print();${autoClose ? " window.close();" : ""}"`
+        : ""
+    }>
       <main class="ticket">
+        ${
+          autoPrint
+            ? ""
+            : `<div class="print-actions"><button onclick="window.print()">Imprimir ticket</button></div>`
+        }
         <div class="center">
           <h1>${escapeHtml(data.businessName)}</h1>
           <p class="muted">${escapeHtml(data.documentLabel)}</p>

@@ -1441,12 +1441,11 @@ export function PosApp({ initialSession }: PosAppProps) {
   }
 
   function printTicketInBrowser(html: string) {
-    const printWindow = window.open(
-      "",
-      "_blank",
-      "noopener,noreferrer,width=420,height=720",
-    );
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const blobUrl = URL.createObjectURL(blob);
+    const printWindow = window.open(blobUrl, "_blank", "width=420,height=720");
     if (!printWindow) {
+      URL.revokeObjectURL(blobUrl);
       setMessage({
         tone: "error",
         text: "El navegador bloqueo la ventana de impresion",
@@ -1454,16 +1453,19 @@ export function PosApp({ initialSession }: PosAppProps) {
       return;
     }
 
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
+    window.setTimeout(() => {
+      URL.revokeObjectURL(blobUrl);
+    }, 60_000);
   }
 
   async function printTicket(ticketData: PosTicketData) {
-    const ticketHtml = buildPosTicketHtml(ticketData);
-
     if (!selectedPrinter) {
-      printTicketInBrowser(ticketHtml);
+      printTicketInBrowser(
+        buildPosTicketHtml(ticketData, {
+          autoPrint: false,
+          autoClose: false,
+        }),
+      );
       return;
     }
 
@@ -1482,7 +1484,12 @@ export function PosApp({ initialSession }: PosAppProps) {
             ? `${error.message}. Se abrira la impresion del navegador como respaldo.`
             : "No se pudo imprimir por la impresora local. Se abrira el navegador como respaldo.",
       });
-      printTicketInBrowser(ticketHtml);
+      printTicketInBrowser(
+        buildPosTicketHtml(ticketData, {
+          autoPrint: false,
+          autoClose: false,
+        }),
+      );
     }
   }
 
