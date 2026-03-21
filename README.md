@@ -81,3 +81,5 @@ SRI_TIMEOUT_MS="15000"
 Ver documento completo en:
 
 - `docs/mvp-inventario-ventas-sri.md`
+- `docs/core-modular-architecture.md`
+- `docs/phase-1-core-alignment.md`

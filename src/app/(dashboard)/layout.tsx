@@ -1,5 +1,5 @@
-import { DashboardUserMenu } from "@/components/dashboard-user-menu";
-import { MvpDashboardNav } from "@/components/mvp-dashboard-nav";
+import { MvpDashboardNav } from "@/shared/dashboard/nav";
+import { DashboardUserMenu } from "@/shared/dashboard/user-menu";
 import { getSession } from "@/lib/auth";
 
 export default async function DashboardLayout({
@@ -14,16 +14,28 @@ export default async function DashboardLayout({
     <main className="relative min-h-screen overflow-x-hidden p-3 md:p-4 xl:p-6">
       <div className="relative mx-auto max-w-400">
         <div className="lg:hidden">
-          <MvpDashboardNav userRole={session?.role} />
+          <MvpDashboardNav
+            userRole={session?.role}
+            businessName={session?.businessName}
+            enabledFeatures={session?.features}
+          />
         </div>
 
         <div className="hidden lg:fixed lg:bottom-4 lg:left-4 lg:top-4 lg:z-40 lg:block lg:w-70 xl:bottom-6 xl:left-6 xl:top-6 xl:w-74">
-          <MvpDashboardNav userRole={session?.role} />
+          <MvpDashboardNav
+            userRole={session?.role}
+            businessName={session?.businessName}
+            enabledFeatures={session?.features}
+          />
         </div>
 
         {session ? (
           <div className="mb-3 flex justify-end lg:fixed lg:right-4 lg:top-4 lg:z-50 lg:mb-0 xl:right-6 xl:top-6">
-            <DashboardUserMenu name={session.name} roleLabel={roleLabel} />
+            <DashboardUserMenu
+              name={session.name}
+              roleLabel={roleLabel}
+              businessName={session.businessName}
+            />
           </div>
         ) : null}
 

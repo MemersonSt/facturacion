@@ -1,0 +1,2634 @@
+"use client";
+
+import { format } from "date-fns";
+import {
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  Chip,
+  Collapse,
+  Divider,
+  Grid,
+  IconButton,
+  InputAdornment,
+  Menu,
+  MenuItem,
+  Paper,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
+import {
+  Loader2,
+  MoreHorizontal,
+  PauseCircle,
+  Plus,
+  Printer,
+  RefreshCcw,
+  ScanLine,
+  Search,
+  ShoppingCart,
+  Trash2,
+  UserRoundSearch,
+  Wallet,
+} from "lucide-react";
+import NextLink from "next/link";
+import {
+  startTransition,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
+
+import { buildPosTicketHtml } from "@/lib/pos-ticket-template";
+import { PosCashSessionDialog } from "@/modules/pos/components/pos-cash-session-dialog";
+import { PosHeldSalesDialog } from "@/modules/pos/components/pos-held-sales-dialog";
+import { fetchJson } from "@/shared/dashboard/api";
+import {
+  IDENTIFICATION_TYPES,
+  PAYMENT_METHODS,
+  type Customer,
+  type LineItem,
+  type Product,
+} from "@/shared/dashboard/types";
+
+type PosAppProps = {
+  initialSession: {
+    name: string;
+    role: "ADMIN" | "SELLER";
+  };
+};
+
+type PosDocumentType = "NONE" | "INVOICE";
+
+type PosCashSession = {
+  id: string;
+  status: "OPEN" | "CLOSED";
+  openingAmount: number;
+  closingAmount: number | null;
+  notes: string | null;
+  openedAt: string;
+  closedAt: string | null;
+  salesCount: number;
+  salesTotal: number;
+};
+
+type PosHeldSalePayload = {
+  documentType: PosDocumentType;
+  paymentMethod?: string;
+  payments?: Array<{
+    formaPago: string;
+    total: number;
+  }>;
+  customer: {
+    tipoIdentificacion: string;
+    identificacion: string;
+    razonSocial: string;
+    direccion?: string;
+    email?: string;
+    telefono?: string;
+  };
+  items: LineItem[];
+};
+
+type PosHeldSale = {
+  id: string;
+  label: string;
+  updatedAt: string;
+  itemCount: number;
+  total: number;
+  payload: PosHeldSalePayload | null;
+};
+
+type PosBootstrap = {
+  business: {
+    id: string;
+    name: string;
+  };
+  operator: {
+    id: string;
+    name: string;
+    role: "ADMIN" | "SELLER";
+  };
+  billingEnabled: boolean;
+  defaultDocumentType: PosDocumentType;
+  defaultIssuerId: string;
+  cashSession: PosCashSession | null;
+  heldSales: PosHeldSale[];
+  customers: Customer[];
+  products: Product[];
+};
+
+type CheckoutResponse = {
+  saleNumber: string;
+  totals: {
+    subtotal: number;
+    taxTotal: number;
+    total: number;
+  };
+  document: {
+    type: PosDocumentType;
+    status: "NOT_REQUIRED" | "PENDING" | "ISSUED" | "ERROR" | "VOIDED";
+  };
+  invoice: {
+    sriInvoiceId: string;
+    status: "DRAFT" | "AUTHORIZED" | "PENDING_SRI" | "ERROR";
+  } | null;
+};
+
+type MessageState = {
+  tone: "success" | "error" | "info";
+  text: string;
+} | null;
+
+type LinePreviewRow = LineItem & {
+  product: Product;
+  subtotal: number;
+  iva: number;
+  total: number;
+};
+
+type PosPaymentLine = {
+  id: string;
+  formaPago: string;
+  total: string;
+};
+
+const EMPTY_PRODUCTS: Product[] = [];
+const EMPTY_CUSTOMERS: Customer[] = [];
+const EMPTY_HELD_SALES: PosHeldSale[] = [];
+
+const WALK_IN_CUSTOMER = {
+  tipoIdentificacion: "07",
+  identificacion: "9999999999999",
+  razonSocial: "Consumidor final",
+  direccion: "",
+  email: "",
+  telefono: "",
+};
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("es-EC", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatDateTime(value: string | Date) {
+  return new Intl.DateTimeFormat("es-EC", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function buildDefaultCustomer() {
+  return { ...WALK_IN_CUSTOMER };
+}
+
+function createPaymentLine(formaPago = "01", total = "0.00"): PosPaymentLine {
+  return {
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `pay-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    formaPago,
+    total,
+  };
+}
+
+function isEditableElement(target: EventTarget | null) {
+  const element = target instanceof HTMLElement ? target : null;
+  if (!element) return false;
+
+  const tagName = element.tagName;
+  return (
+    element.isContentEditable ||
+    tagName === "INPUT" ||
+    tagName === "TEXTAREA" ||
+    tagName === "SELECT"
+  );
+}
+
+export function PosApp({ initialSession }: PosAppProps) {
+  const barcodeInputRef = useRef<HTMLInputElement | null>(null);
+  const customerNameInputRef = useRef<HTMLInputElement | null>(null);
+  const [bootstrap, setBootstrap] = useState<PosBootstrap | null>(null);
+  const [bootLoading, setBootLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
+  const [message, setMessage] = useState<MessageState>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [cashSubmitting, setCashSubmitting] = useState(false);
+  const [holding, setHolding] = useState(false);
+  const [cashDialogOpen, setCashDialogOpen] = useState(false);
+  const [heldSalesDialogOpen, setHeldSalesDialogOpen] = useState(false);
+  const [showExtraCustomerFields, setShowExtraCustomerFields] = useState(false);
+  const [toolbarMenuAnchor, setToolbarMenuAnchor] =
+    useState<null | HTMLElement>(null);
+  const [lineItems, setLineItems] = useState<LineItem[]>([]);
+  const [customer, setCustomer] = useState(buildDefaultCustomer);
+  const [paymentLines, setPaymentLines] = useState<PosPaymentLine[]>(() => [
+    createPaymentLine(),
+  ]);
+  const [paymentLinesTouched, setPaymentLinesTouched] = useState(false);
+  const [cashReceived, setCashReceived] = useState("0.00");
+  const [cashReceivedTouched, setCashReceivedTouched] = useState(false);
+  const [documentType, setDocumentType] = useState<PosDocumentType>("NONE");
+  const [heldLabel, setHeldLabel] = useState("");
+  const [activeHeldSaleId, setActiveHeldSaleId] = useState<string | null>(null);
+  const [openingAmount, setOpeningAmount] = useState("0");
+  const [openingNotes, setOpeningNotes] = useState("");
+  const [closingAmount, setClosingAmount] = useState("");
+  const [closingNotes, setClosingNotes] = useState("");
+  const [lastTicketHtml, setLastTicketHtml] = useState<string | null>(null);
+  const [barcodeQuery, setBarcodeQuery] = useState("");
+  const [entryQuantity, setEntryQuantity] = useState("1");
+  const [manualProduct, setManualProduct] = useState<Product | null>(null);
+
+  const products = bootstrap?.products ?? EMPTY_PRODUCTS;
+  const customers = bootstrap?.customers ?? EMPTY_CUSTOMERS;
+  const heldSales = bootstrap?.heldSales ?? EMPTY_HELD_SALES;
+  const cashSession = bootstrap?.cashSession ?? null;
+  const desktopContentHeight = message
+    ? "calc(100vh - 198px)"
+    : "calc(100vh - 156px)";
+  const isToolbarMenuOpen = Boolean(toolbarMenuAnchor);
+
+  const linePreview = useMemo<LinePreviewRow[]>(
+    () =>
+      lineItems
+        .map((line) => {
+          const product = products.find((item) => item.id === line.productId);
+          if (!product) return null;
+
+          const subtotal = line.cantidad * line.precioUnitario - line.descuento;
+          const iva = (subtotal * product.tarifaIva) / 100;
+
+          return {
+            ...line,
+            product,
+            subtotal,
+            iva,
+            total: subtotal + iva,
+          };
+        })
+        .filter((line): line is LinePreviewRow => Boolean(line)),
+    [lineItems, products],
+  );
+
+  const totals = useMemo(
+    () => ({
+      subtotal: linePreview.reduce((acc, line) => acc + line.subtotal, 0),
+      discount: linePreview.reduce((acc, line) => acc + line.descuento, 0),
+      tax: linePreview.reduce((acc, line) => acc + line.iva, 0),
+      total: linePreview.reduce((acc, line) => acc + line.total, 0),
+    }),
+    [linePreview],
+  );
+
+  const allocatedAmount = useMemo(
+    () =>
+      paymentLines.reduce((acc, line) => acc + Number(line.total || "0"), 0),
+    [paymentLines],
+  );
+
+  const cashPaymentAllocated = useMemo(
+    () =>
+      paymentLines.reduce(
+        (acc, line) =>
+          acc + (line.formaPago === "01" ? Number(line.total || "0") : 0),
+        0,
+      ),
+    [paymentLines],
+  );
+
+  const paymentDelta = useMemo(
+    () => Number((allocatedAmount - totals.total).toFixed(2)),
+    [allocatedAmount, totals.total],
+  );
+
+  const receivedAmount = useMemo(
+    () =>
+      cashPaymentAllocated > 0 ? Number(cashReceived || "0") : allocatedAmount,
+    [allocatedAmount, cashPaymentAllocated, cashReceived],
+  );
+
+  const remainingAmount = paymentDelta < 0 ? Math.abs(paymentDelta) : 0;
+  const overAllocatedAmount = paymentDelta > 0 ? paymentDelta : 0;
+  const changeAmount =
+    cashPaymentAllocated > 0
+      ? Math.max(Number((receivedAmount - cashPaymentAllocated).toFixed(2)), 0)
+      : 0;
+
+  const paymentSummaryLabel = useMemo(() => {
+    const nonZeroLines = paymentLines.filter(
+      (line) => Number(line.total || "0") > 0,
+    );
+
+    if (nonZeroLines.length === 0) {
+      return "Sin cobro cargado";
+    }
+
+    if (nonZeroLines.length === 1) {
+      const method = PAYMENT_METHODS.find(
+        (item) => item.code === nonZeroLines[0].formaPago,
+      );
+      return method?.label ?? nonZeroLines[0].formaPago;
+    }
+
+    return `${nonZeroLines.length} medios`;
+  }, [paymentLines]);
+
+  const checkoutPayments = useMemo(
+    () =>
+      paymentLines
+        .map((line) => ({
+          formaPago: line.formaPago,
+          total: Number(line.total || "0"),
+          plazo: 0,
+          unidadTiempo: "DIAS",
+        }))
+        .filter((line) => line.total > 0),
+    [paymentLines],
+  );
+
+  const dataGridColumns = useMemo<GridColDef<LinePreviewRow>[]>(
+    () => [
+      {
+        field: "codigo",
+        headerName: "Codigo",
+        minWidth: 116,
+        flex: 0.8,
+        sortable: false,
+        valueGetter: (_, row) => row.product.codigo,
+        renderCell: (params) => (
+          <Typography
+            variant="body2"
+            sx={{ fontSize: 12, fontWeight: 700, color: "#5c4635" }}
+          >
+            {params.row.product.codigo}
+          </Typography>
+        ),
+      },
+      {
+        field: "nombre",
+        headerName: "Producto",
+        minWidth: 210,
+        flex: 1.4,
+        sortable: false,
+        valueGetter: (_, row) => row.product.nombre,
+        renderCell: (params) => (
+          <Stack spacing={0.15} justifyContent="center">
+            <Typography
+              variant="body2"
+              sx={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#4a3c58",
+                lineHeight: 1.15,
+              }}
+            >
+              {params.row.product.nombre}
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{
+                fontSize: 10.5,
+                color: "rgba(74, 60, 88, 0.6)",
+                lineHeight: 1.1,
+              }}
+            >
+              {params.row.product.tipoProducto === "BIEN"
+                ? `Stock ${params.row.product.stock.toFixed(3)}`
+                : "Servicio"}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        field: "cantidad",
+        headerName: "Cantidad",
+        minWidth: 132,
+        flex: 0.8,
+        sortable: false,
+        renderCell: (params) => (
+          <TextField
+            type="number"
+            size="small"
+            value={params.row.cantidad}
+            onChange={(e) => {
+              const next = Number(e.target.value || "0");
+              if (next <= 0) {
+                removeLine(params.row.productId);
+                return;
+              }
+              updateLine(params.row.productId, { cantidad: next });
+            }}
+            inputProps={{ min: 0.001, step: "0.001" }}
+            sx={{
+              minWidth: 88,
+              "& .MuiInputBase-root": {
+                height: 34,
+                fontSize: 12,
+                borderRadius: "10px",
+                backgroundColor: "#fff",
+              },
+              "& input": {
+                px: 1,
+                py: 0.4,
+              },
+            }}
+          />
+        ),
+      },
+      {
+        field: "precioUnitario",
+        headerName: "Precio",
+        minWidth: 132,
+        flex: 0.85,
+        sortable: false,
+        renderCell: (params) => (
+          <TextField
+            type="number"
+            size="small"
+            value={params.row.precioUnitario}
+            onChange={(e) =>
+              updateLine(params.row.productId, {
+                precioUnitario: Number(e.target.value || "0"),
+              })
+            }
+            inputProps={{ min: 0, step: "0.01" }}
+            sx={{
+              minWidth: 88,
+              "& .MuiInputBase-root": {
+                height: 34,
+                fontSize: 12,
+                borderRadius: "10px",
+                backgroundColor: "#fff",
+              },
+              "& input": {
+                px: 1,
+                py: 0.4,
+              },
+            }}
+          />
+        ),
+      },
+      {
+        field: "descuento",
+        headerName: "Desc.",
+        minWidth: 118,
+        flex: 0.75,
+        sortable: false,
+        renderCell: (params) => (
+          <TextField
+            type="number"
+            size="small"
+            value={params.row.descuento}
+            onChange={(e) =>
+              updateLine(params.row.productId, {
+                descuento: Number(e.target.value || "0"),
+              })
+            }
+            inputProps={{ min: 0, step: "0.01" }}
+            sx={{
+              minWidth: 84,
+              "& .MuiInputBase-root": {
+                height: 34,
+                fontSize: 12,
+                borderRadius: "10px",
+                backgroundColor: "#fff",
+              },
+              "& input": {
+                px: 1,
+                py: 0.4,
+              },
+            }}
+          />
+        ),
+      },
+      {
+        field: "iva",
+        headerName: "IVA",
+        minWidth: 108,
+        flex: 0.65,
+        sortable: false,
+        align: "right",
+        headerAlign: "right",
+        valueGetter: (_, row) => row.iva,
+        valueFormatter: (value) => formatCurrency(Number(value)),
+      },
+      {
+        field: "total",
+        headerName: "Total",
+        minWidth: 118,
+        flex: 0.75,
+        sortable: false,
+        align: "right",
+        headerAlign: "right",
+        valueFormatter: (value) => formatCurrency(Number(value)),
+      },
+      {
+        field: "actions",
+        headerName: "",
+        sortable: false,
+        filterable: false,
+        disableColumnMenu: true,
+        minWidth: 70,
+        flex: 0.35,
+        renderCell: (params) => (
+          <IconButton
+            size="small"
+            color="error"
+            onClick={() => removeLine(params.row.productId)}
+            sx={{ p: 0.5 }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </IconButton>
+        ),
+      },
+    ],
+    [],
+  );
+
+  async function loadBootstrap() {
+    setBootLoading(true);
+
+    try {
+      const data = await fetchJson<PosBootstrap>("/api/v1/pos/bootstrap");
+      startTransition(() => {
+        setBootstrap(data);
+        if (!data.billingEnabled) {
+          setDocumentType("NONE");
+        }
+      });
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : "No se pudo cargar POS",
+      });
+    } finally {
+      setBootLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const timeoutId = message
+      ? window.setTimeout(() => setMessage(null), 4200)
+      : null;
+
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [message]);
+
+  useEffect(() => {
+    void loadBootstrap();
+  }, []);
+
+  useEffect(() => {
+    if (!bootstrap || initialized) {
+      return;
+    }
+
+    setLineItems([]);
+    setCustomer(buildDefaultCustomer());
+    setPaymentLines([createPaymentLine("01", "0.00")]);
+    setPaymentLinesTouched(false);
+    setCashReceived("0.00");
+    setCashReceivedTouched(false);
+    setDocumentType(bootstrap.defaultDocumentType);
+    setHeldLabel("");
+    setActiveHeldSaleId(null);
+    setBarcodeQuery("");
+    setManualProduct(null);
+    setEntryQuantity("1");
+    setInitialized(true);
+  }, [bootstrap, initialized]);
+
+  useEffect(() => {
+    if (!bootstrap || bootLoading || cashDialogOpen || heldSalesDialogOpen) {
+      return;
+    }
+
+    focusBarcodeField();
+  }, [bootstrap, bootLoading, cashDialogOpen, heldSalesDialogOpen]);
+
+  useEffect(() => {
+    if (paymentLinesTouched || paymentLines.length !== 1) {
+      return;
+    }
+
+    const nextTotal = totals.total > 0 ? totals.total.toFixed(2) : "0.00";
+    if (paymentLines[0]?.total === nextTotal) {
+      return;
+    }
+
+    setPaymentLines((prev) => {
+      if (prev.length !== 1) {
+        return prev;
+      }
+
+      return [{ ...prev[0], total: nextTotal }];
+    });
+  }, [paymentLines, paymentLinesTouched, totals.total]);
+
+  useEffect(() => {
+    if (cashReceivedTouched) {
+      return;
+    }
+
+    const nextValue =
+      cashPaymentAllocated > 0 ? cashPaymentAllocated.toFixed(2) : "0.00";
+    if (cashReceived === nextValue) {
+      return;
+    }
+
+    setCashReceived(nextValue);
+  }, [cashPaymentAllocated, cashReceived, cashReceivedTouched]);
+
+  const handleGlobalShortcuts = useEffectEvent((event: KeyboardEvent) => {
+    if (!bootstrap || bootLoading || cashDialogOpen || heldSalesDialogOpen) {
+      return;
+    }
+
+    const editableTarget = isEditableElement(event.target);
+
+    if ((event.ctrlKey || event.metaKey) && event.code === "KeyB") {
+      event.preventDefault();
+      focusBarcodeField(true);
+      return;
+    }
+
+    if (
+      editableTarget &&
+      !event.code.startsWith("F") &&
+      event.code !== "Escape"
+    ) {
+      return;
+    }
+
+    switch (event.code) {
+      case "F1":
+        event.preventDefault();
+        resetSaleState(bootstrap.defaultDocumentType);
+        focusBarcodeField(true);
+        break;
+      case "F2":
+        event.preventDefault();
+        applyWalkInCustomer();
+        break;
+      case "F4":
+        event.preventDefault();
+        setCashDialogOpen(true);
+        break;
+      case "F6":
+        event.preventDefault();
+        setHeldSalesDialogOpen(true);
+        break;
+      case "F8":
+        event.preventDefault();
+        if (!holding) {
+          void saveHeldSale();
+        }
+        break;
+      case "F9":
+        event.preventDefault();
+        if (lastTicketHtml) {
+          printTicket(lastTicketHtml);
+        }
+        break;
+      case "F10":
+        event.preventDefault();
+        if (
+          !submitting &&
+          cashSession &&
+          checkoutPayments.length > 0 &&
+          remainingAmount <= 0 &&
+          overAllocatedAmount <= 0
+        ) {
+          void checkoutSale();
+        }
+        break;
+      case "Escape":
+        event.preventDefault();
+        focusBarcodeField(true);
+        break;
+      default:
+        break;
+    }
+  });
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleGlobalShortcuts);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalShortcuts);
+    };
+  }, []);
+
+  function resetSaleState(nextDocumentType?: PosDocumentType) {
+    setLineItems([]);
+    setCustomer(buildDefaultCustomer());
+    setPaymentLines([createPaymentLine("01", "0.00")]);
+    setPaymentLinesTouched(false);
+    setCashReceived("0.00");
+    setCashReceivedTouched(false);
+    setDocumentType(
+      nextDocumentType ?? bootstrap?.defaultDocumentType ?? "NONE",
+    );
+    setHeldLabel("");
+    setActiveHeldSaleId(null);
+    setBarcodeQuery("");
+    setManualProduct(null);
+    setEntryQuantity("1");
+    setShowExtraCustomerFields(false);
+    focusBarcodeField();
+  }
+
+  function openToolbarMenu(event: MouseEvent<HTMLButtonElement>) {
+    setToolbarMenuAnchor(event.currentTarget);
+  }
+
+  function closeToolbarMenu() {
+    setToolbarMenuAnchor(null);
+  }
+
+  function focusBarcodeField(select = false) {
+    window.requestAnimationFrame(() => {
+      const input = barcodeInputRef.current;
+      if (!input) {
+        return;
+      }
+
+      input.focus();
+      if (select) {
+        input.select();
+      }
+    });
+  }
+
+  function focusCustomerNameField(select = false) {
+    window.requestAnimationFrame(() => {
+      const input = customerNameInputRef.current;
+      if (!input) {
+        return;
+      }
+
+      input.focus();
+      if (select) {
+        input.select();
+      }
+    });
+  }
+
+  function updatePaymentLine(lineId: string, patch: Partial<PosPaymentLine>) {
+    setPaymentLinesTouched(true);
+    setPaymentLines((prev) =>
+      prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line)),
+    );
+  }
+
+  function addPaymentLine() {
+    setPaymentLinesTouched(true);
+    setPaymentLines((prev) => [...prev, createPaymentLine("19", "0.00")]);
+  }
+
+  function removePaymentLine(lineId: string) {
+    setPaymentLinesTouched(true);
+    setPaymentLines((prev) => {
+      if (prev.length === 1) {
+        return [{ ...prev[0], total: "0.00" }];
+      }
+
+      return prev.filter((line) => line.id !== lineId);
+    });
+  }
+
+  function fillRemainingPayment() {
+    setPaymentLinesTouched(true);
+    setPaymentLines((prev) => {
+      if (prev.length === 0) {
+        return [createPaymentLine("01", totals.total.toFixed(2))];
+      }
+
+      const lastLine = prev.at(-1);
+      if (!lastLine) {
+        return prev;
+      }
+
+      const otherTotal = prev
+        .slice(0, -1)
+        .reduce((acc, line) => acc + Number(line.total || "0"), 0);
+      const nextAmount = Math.max(totals.total - otherTotal, 0);
+
+      return prev.map((line) =>
+        line.id === lastLine.id
+          ? { ...line, total: nextAmount.toFixed(2) }
+          : line,
+      );
+    });
+  }
+
+  function normalizeHeldSalePayments(payload: PosHeldSalePayload) {
+    if (payload.payments && payload.payments.length > 0) {
+      return payload.payments.map((payment) =>
+        createPaymentLine(
+          payment.formaPago,
+          Number(payment.total || 0).toFixed(2),
+        ),
+      );
+    }
+
+    return [createPaymentLine(payload.paymentMethod ?? "01", "0.00")];
+  }
+
+  function resolveProductByCode(query: string) {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return null;
+
+    return (
+      products.find((product) => product.codigo.toLowerCase() === normalized) ??
+      products.find(
+        (product) => (product.sku ?? "").toLowerCase() === normalized,
+      ) ??
+      products.find((product) => product.nombre.toLowerCase() === normalized) ??
+      products.find(
+        (product) =>
+          product.codigo.toLowerCase().includes(normalized) ||
+          (product.sku ?? "").toLowerCase().includes(normalized) ||
+          product.nombre.toLowerCase().includes(normalized),
+      ) ??
+      null
+    );
+  }
+
+  function addProduct(product: Product, quantity = 1) {
+    if (product.tipoProducto === "BIEN" && product.stock <= 0) {
+      setMessage({
+        tone: "error",
+        text: `${product.nombre} no tiene stock disponible`,
+      });
+      return;
+    }
+
+    setLineItems((prev) => {
+      const current = prev.find((item) => item.productId === product.id);
+      if (current) {
+        return prev.map((item) =>
+          item.productId === product.id
+            ? {
+                ...item,
+                cantidad: Number((item.cantidad + quantity).toFixed(3)),
+              }
+            : item,
+        );
+      }
+
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          cantidad: quantity,
+          precioUnitario: product.precio,
+          descuento: 0,
+        },
+      ];
+    });
+  }
+
+  function updateLine(productId: string, patch: Partial<LineItem>) {
+    setLineItems((prev) =>
+      prev.map((item) =>
+        item.productId === productId ? { ...item, ...patch } : item,
+      ),
+    );
+  }
+
+  function removeLine(productId: string) {
+    setLineItems((prev) => prev.filter((item) => item.productId !== productId));
+  }
+
+  function selectCustomer(nextCustomer: Partial<typeof customer>) {
+    setCustomer((prev) => ({
+      ...prev,
+      ...nextCustomer,
+    }));
+  }
+
+  function applyExistingCustomer(nextCustomer: Customer) {
+    selectCustomer({
+      tipoIdentificacion: nextCustomer.tipoIdentificacion,
+      identificacion: nextCustomer.identificacion,
+      razonSocial: nextCustomer.razonSocial,
+      direccion: nextCustomer.direccion ?? "",
+      email: nextCustomer.email ?? "",
+      telefono: nextCustomer.telefono ?? "",
+    });
+  }
+
+  function searchCustomerByIdentification() {
+    const query = customer.identificacion.trim().toLowerCase();
+
+    if (!query) {
+      setMessage({
+        tone: "info",
+        text: "Ingresa una identificacion para buscar un cliente existente",
+      });
+      return;
+    }
+
+    const existingCustomer =
+      customers.find((item) => item.identificacion.toLowerCase() === query) ??
+      customers.find((item) =>
+        item.identificacion.toLowerCase().includes(query),
+      );
+
+    if (!existingCustomer) {
+      setMessage({
+        tone: "info",
+        text: "No se encontro cliente con esa identificacion. Puedes completar los datos manualmente.",
+      });
+      focusCustomerNameField();
+      return;
+    }
+
+    applyExistingCustomer(existingCustomer);
+    setMessage({
+      tone: "success",
+      text: `Cliente ${existingCustomer.razonSocial} cargado`,
+    });
+    focusBarcodeField(true);
+  }
+
+  function applyWalkInCustomer() {
+    setCustomer(buildDefaultCustomer());
+    setDocumentType("NONE");
+    setShowExtraCustomerFields(false);
+    setMessage({
+      tone: "info",
+      text: "Cliente rapido aplicado como consumidor final",
+    });
+    focusBarcodeField(true);
+  }
+
+  function handleAddByCode() {
+    const product = resolveProductByCode(barcodeQuery);
+    const quantity = Number(entryQuantity || "1");
+
+    if (!product) {
+      setMessage({
+        tone: "error",
+        text: "No se encontro producto con ese codigo o descripcion",
+      });
+      return;
+    }
+
+    if (quantity <= 0) {
+      setMessage({ tone: "error", text: "La cantidad debe ser mayor a cero" });
+      return;
+    }
+
+    addProduct(product, quantity);
+    setBarcodeQuery("");
+    setEntryQuantity("1");
+    focusBarcodeField();
+  }
+
+  function handleAddManualProduct() {
+    const quantity = Number(entryQuantity || "1");
+
+    if (!manualProduct) {
+      setMessage({ tone: "error", text: "Selecciona un producto manualmente" });
+      return;
+    }
+
+    if (quantity <= 0) {
+      setMessage({ tone: "error", text: "La cantidad debe ser mayor a cero" });
+      return;
+    }
+
+    addProduct(manualProduct, quantity);
+    setManualProduct(null);
+    setEntryQuantity("1");
+    focusBarcodeField();
+  }
+
+  async function openCash() {
+    setCashSubmitting(true);
+
+    try {
+      await fetchJson<PosCashSession>("/api/v1/pos/cash-session", {
+        method: "POST",
+        body: JSON.stringify({
+          openingAmount: Number(openingAmount || "0"),
+          notes: openingNotes,
+        }),
+      });
+
+      setMessage({ tone: "success", text: "Caja abierta correctamente" });
+      setOpeningNotes("");
+      setClosingAmount("");
+      setClosingNotes("");
+      setCashDialogOpen(false);
+      await loadBootstrap();
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : "No se pudo abrir caja",
+      });
+    } finally {
+      setCashSubmitting(false);
+    }
+  }
+
+  async function closeCash() {
+    setCashSubmitting(true);
+
+    try {
+      await fetchJson<PosCashSession>("/api/v1/pos/cash-session", {
+        method: "PATCH",
+        body: JSON.stringify({
+          closingAmount: Number(closingAmount || "0"),
+          notes: closingNotes,
+        }),
+      });
+
+      setMessage({ tone: "success", text: "Caja cerrada correctamente" });
+      setClosingAmount("");
+      setClosingNotes("");
+      setCashDialogOpen(false);
+      await loadBootstrap();
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : "No se pudo cerrar caja",
+      });
+    } finally {
+      setCashSubmitting(false);
+    }
+  }
+
+  async function saveHeldSale() {
+    if (lineItems.length === 0) {
+      setMessage({
+        tone: "error",
+        text: "Agrega productos antes de guardar una venta en espera",
+      });
+      return;
+    }
+
+    setHolding(true);
+
+    try {
+      await fetchJson<PosHeldSale>("/api/v1/pos/held-sales", {
+        method: "POST",
+        body: JSON.stringify({
+          heldSaleId: activeHeldSaleId ?? undefined,
+          label: heldLabel.trim() || `Espera ${format(new Date(), "HH:mm")}`,
+          payload: {
+            documentType,
+            paymentMethod: paymentLines[0]?.formaPago ?? "01",
+            payments: paymentLines.map((line) => ({
+              formaPago: line.formaPago,
+              total: Number(line.total || "0"),
+            })),
+            customer,
+            items: lineItems,
+          },
+        }),
+      });
+
+      setMessage({ tone: "success", text: "Venta en espera guardada" });
+      resetSaleState(bootstrap?.defaultDocumentType);
+      await loadBootstrap();
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "No se pudo guardar en espera",
+      });
+    } finally {
+      setHolding(false);
+    }
+  }
+
+  function loadHeldSale(heldSale: PosHeldSale) {
+    if (!heldSale.payload) {
+      setMessage({
+        tone: "error",
+        text: "La venta en espera no tiene un formato valido",
+      });
+      return;
+    }
+
+    const payload = heldSale.payload;
+
+    startTransition(() => {
+      setLineItems(payload.items);
+      setCustomer({
+        ...buildDefaultCustomer(),
+        ...payload.customer,
+      });
+      setPaymentLines(normalizeHeldSalePayments(payload));
+      setPaymentLinesTouched(true);
+      setCashReceived("0.00");
+      setCashReceivedTouched(false);
+      setDocumentType(payload.documentType);
+      setHeldLabel(heldSale.label);
+      setActiveHeldSaleId(heldSale.id);
+    });
+
+    setMessage({
+      tone: "info",
+      text: `Venta en espera "${heldSale.label}" cargada`,
+    });
+    focusBarcodeField(true);
+  }
+
+  async function removeHeldSale(heldSaleId: string) {
+    try {
+      await fetchJson<{ id: string }>(`/api/v1/pos/held-sales/${heldSaleId}`, {
+        method: "DELETE",
+      });
+
+      if (activeHeldSaleId === heldSaleId) {
+        setActiveHeldSaleId(null);
+      }
+
+      await loadBootstrap();
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "No se pudo borrar la espera",
+      });
+    }
+  }
+
+  function validateCustomer() {
+    if (documentType === "NONE") {
+      return null;
+    }
+
+    const identification = customer.identificacion.trim();
+
+    if (
+      customer.tipoIdentificacion === "05" &&
+      !/^\d{10}$/.test(identification)
+    ) {
+      return "La cedula debe tener 10 digitos";
+    }
+
+    if (
+      customer.tipoIdentificacion === "04" &&
+      !/^\d{13}$/.test(identification)
+    ) {
+      return "El RUC debe tener 13 digitos";
+    }
+
+    if (!customer.razonSocial.trim()) {
+      return "La razon social es obligatoria para factura";
+    }
+
+    return null;
+  }
+
+  async function checkoutSale() {
+    if (!bootstrap) return;
+
+    if (!cashSession) {
+      setMessage({
+        tone: "error",
+        text: "Abre caja antes de cobrar en el POS",
+      });
+      return;
+    }
+
+    if (linePreview.length === 0) {
+      setMessage({
+        tone: "error",
+        text: "Agrega al menos un producto al detalle",
+      });
+      return;
+    }
+
+    const customerError = validateCustomer();
+    if (customerError) {
+      setMessage({ tone: "error", text: customerError });
+      return;
+    }
+
+    if (checkoutPayments.length === 0) {
+      setMessage({
+        tone: "error",
+        text: "Agrega al menos una linea de pago para procesar la venta",
+      });
+      return;
+    }
+
+    if (remainingAmount > 0) {
+      setMessage({
+        tone: "error",
+        text: `Falta registrar ${formatCurrency(remainingAmount)} para completar el cobro`,
+      });
+      return;
+    }
+
+    if (overAllocatedAmount > 0) {
+      setMessage({
+        tone: "error",
+        text: `Los pagos exceden el total por ${formatCurrency(overAllocatedAmount)}`,
+      });
+      return;
+    }
+
+    if (cashPaymentAllocated > 0 && receivedAmount < cashPaymentAllocated) {
+      setMessage({
+        tone: "error",
+        text: "El recibido en efectivo no puede ser menor al valor cobrado en efectivo",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const effectiveCustomer =
+        documentType === "NONE"
+          ? {
+              ...WALK_IN_CUSTOMER,
+              razonSocial:
+                customer.razonSocial.trim() || WALK_IN_CUSTOMER.razonSocial,
+            }
+          : customer;
+
+      const result = await fetchJson<CheckoutResponse>(
+        "/api/v1/sales/checkout",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            documentType,
+            issuerId: bootstrap.defaultIssuerId,
+            fechaEmision: format(new Date(), "dd/MM/yyyy"),
+            moneda: "USD",
+            customer: {
+              tipoIdentificacion: effectiveCustomer.tipoIdentificacion,
+              identificacion: effectiveCustomer.identificacion.trim(),
+              razonSocial: effectiveCustomer.razonSocial.trim(),
+              direccion: effectiveCustomer.direccion ?? "",
+              email: effectiveCustomer.email ?? "",
+              telefono: effectiveCustomer.telefono ?? "",
+            },
+            items: linePreview.map((line) => ({
+              productId: line.productId,
+              productCode: line.product.codigo,
+              cantidad: line.cantidad,
+              descuento: line.descuento,
+              precioUnitario: line.precioUnitario,
+              tarifaIva: line.product.tarifaIva,
+            })),
+            payments: checkoutPayments,
+            infoAdicional: {
+              origin: "POS",
+            },
+          }),
+        },
+      );
+
+      const ticketHtml = buildPosTicketHtml({
+        businessName: bootstrap.business.name,
+        operatorName: bootstrap.operator.name,
+        saleNumber: result.saleNumber,
+        createdAt: formatDateTime(new Date()),
+        customerName: effectiveCustomer.razonSocial,
+        paymentMethodLabel: paymentSummaryLabel,
+        documentLabel:
+          result.document.type === "INVOICE"
+            ? result.invoice?.status === "AUTHORIZED"
+              ? "Factura autorizada"
+              : "Factura en proceso"
+            : "Ticket POS",
+        subtotal: result.totals.subtotal,
+        taxTotal: result.totals.taxTotal,
+        total: result.totals.total,
+        lines: linePreview.map((line) => ({
+          quantity: line.cantidad,
+          name: line.product.nombre,
+          unitPrice: line.precioUnitario,
+          total: line.total,
+        })),
+      });
+
+      setLastTicketHtml(ticketHtml);
+      printTicket(ticketHtml);
+
+      if (activeHeldSaleId) {
+        await fetchJson<{ id: string }>(
+          `/api/v1/pos/held-sales/${activeHeldSaleId}`,
+          {
+            method: "DELETE",
+          },
+        );
+      }
+
+      setMessage({
+        tone: "success",
+        text:
+          result.invoice?.status === "AUTHORIZED"
+            ? `Venta #${result.saleNumber} cobrada y factura autorizada`
+            : `Venta #${result.saleNumber} cobrada correctamente`,
+      });
+      resetSaleState(bootstrap.defaultDocumentType);
+      await loadBootstrap();
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text:
+          error instanceof Error ? error.message : "No se pudo cobrar la venta",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function logout() {
+    await fetch("/api/v1/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
+  function printTicket(html: string) {
+    const printWindow = window.open(
+      "",
+      "_blank",
+      "noopener,noreferrer,width=420,height=720",
+    );
+    if (!printWindow) {
+      setMessage({
+        tone: "error",
+        text: "El navegador bloqueo la ventana de impresion",
+      });
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+
+  if (bootLoading && !bootstrap) {
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          backgroundColor: "#f4efe7",
+        }}
+      >
+        <Paper sx={{ px: 4, py: 3, borderRadius: "24px" }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <Typography>Cargando modulo POS...</Typography>
+          </Stack>
+        </Paper>
+      </Box>
+    );
+  }
+
+  if (!bootstrap) {
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          backgroundColor: "#f4efe7",
+          p: 3,
+        }}
+      >
+        <Paper sx={{ maxWidth: 520, p: 4, borderRadius: "24px" }}>
+          <Stack spacing={2}>
+            <Typography variant="h5" sx={{ fontWeight: 700 }}>
+              No se pudo abrir el POS
+            </Typography>
+            <Typography sx={{ color: "text.secondary" }}>
+              Revisa que el negocio tenga el modulo POS activo y que la sesion
+              siga vigente.
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={() => void loadBootstrap()}
+              startIcon={<RefreshCcw className="h-4 w-4" />}
+            >
+              Reintentar
+            </Button>
+          </Stack>
+        </Paper>
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      sx={{
+        minHeight: "100vh",
+        height: { md: "100vh" },
+        p: { xs: 1.5, md: 2 },
+      }}
+    >
+      <Stack spacing={1.5} sx={{ height: { md: "100%" } }}>
+        <Paper
+          sx={{
+            borderRadius: "22px",
+            overflow: "hidden",
+            borderColor: "rgba(74, 60, 88, 0.12)",
+          }}
+        >
+          <Box
+            sx={{
+              px: { xs: 1.5, md: 2.25 },
+              py: 1.25,
+            }}
+          >
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={1.25}
+              justifyContent="space-between"
+              alignItems={{ xs: "flex-start", md: "center" }}
+            >
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                spacing={1}
+                alignItems={{ xs: "flex-start", md: "center" }}
+              >
+                <Box>
+                  <Typography
+                    sx={{
+                      fontSize: 11,
+                      letterSpacing: "0.16em",
+                      textTransform: "uppercase",
+                      opacity: 0.8,
+                    }}
+                  >
+                    Punto de venta
+                  </Typography>
+                  <Typography
+                    variant="h5"
+                    sx={{ mt: 0.25, fontWeight: 800, lineHeight: 1.1 }}
+                  >
+                    {bootstrap.business.name}
+                  </Typography>
+                  <Typography sx={{ mt: 0.25, opacity: 0.78, fontSize: 13 }}>
+                    Operador: {initialSession.name}
+                  </Typography>
+                </Box>
+
+                <Stack
+                  direction="row"
+                  spacing={0.75}
+                  flexWrap="wrap"
+                  useFlexGap
+                >
+                  <Chip
+                    label={cashSession ? "Caja abierta" : "Sin caja abierta"}
+                    color={cashSession ? "success" : "default"}
+                    size="small"
+                    sx={{
+                      borderRadius: "999px",
+                      backgroundColor: cashSession
+                        ? "#ecfdf3"
+                        : "rgba(255,255,255,0.14)",
+                      color: cashSession ? "#166534" : "#fff",
+                    }}
+                  />
+                  <Chip
+                    label={
+                      bootstrap.billingEnabled
+                        ? "Facturacion disponible"
+                        : "Solo ticket"
+                    }
+                    size="small"
+                    sx={{ borderRadius: "999px" }}
+                  />
+                </Stack>
+              </Stack>
+
+              <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant="contained"
+                  color="inherit"
+                  size="small"
+                  onClick={() => resetSaleState(bootstrap.defaultDocumentType)}
+                >
+                  Nueva · F1
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="error"
+                  startIcon={
+                    submitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ShoppingCart className="h-4 w-4" />
+                    )
+                  }
+                  onClick={() => void checkoutSale()}
+                  disabled={
+                    submitting ||
+                    !cashSession ||
+                    checkoutPayments.length === 0 ||
+                    remainingAmount > 0 ||
+                    overAllocatedAmount > 0
+                  }
+                >
+                  Procesar · F10
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  sx={{ borderColor: "rgba(255,255,255,0.28)" }}
+                  startIcon={<Wallet className="h-4 w-4" />}
+                  onClick={() => setCashDialogOpen(true)}
+                >
+                  {cashSession ? "Caja · F4" : "Caja · F4"}
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  sx={{ borderColor: "rgba(255,255,255,0.28)" }}
+                  startIcon={
+                    holding ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <PauseCircle className="h-4 w-4" />
+                    )
+                  }
+                  onClick={() => void saveHeldSale()}
+                  disabled={holding}
+                >
+                  Espera · F8
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  sx={{ borderColor: "rgba(255,255,255,0.28)" }}
+                  onClick={() => setHeldSalesDialogOpen(true)}
+                >
+                  Esperas ({heldSales.length}) · F6
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  sx={{ borderColor: "rgba(255,255,255,0.28)" }}
+                  startIcon={<Printer className="h-4 w-4" />}
+                  onClick={() => lastTicketHtml && printTicket(lastTicketHtml)}
+                  disabled={!lastTicketHtml}
+                >
+                  Reimprimir · F9
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    borderColor: "rgba(255,255,255,0.28)",
+                    minWidth: 42,
+                    px: 1.1,
+                  }}
+                  onClick={openToolbarMenu}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </Stack>
+            </Stack>
+          </Box>
+        </Paper>
+
+        <Menu
+          anchorEl={toolbarMenuAnchor}
+          open={isToolbarMenuOpen}
+          onClose={closeToolbarMenu}
+          transformOrigin={{ horizontal: "right", vertical: "top" }}
+          anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
+        >
+          <MenuItem
+            onClick={() => {
+              closeToolbarMenu();
+              setHeldSalesDialogOpen(true);
+            }}
+          >
+            Ver esperas
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              closeToolbarMenu();
+              void loadBootstrap();
+            }}
+          >
+            Recargar
+          </MenuItem>
+          {bootstrap.operator.role === "ADMIN" ? (
+            <MenuItem
+              component={NextLink}
+              href="/overview"
+              onClick={closeToolbarMenu}
+            >
+              Ir al panel
+            </MenuItem>
+          ) : null}
+          <MenuItem
+            onClick={() => {
+              closeToolbarMenu();
+              void logout();
+            }}
+          >
+            Salir
+          </MenuItem>
+        </Menu>
+
+        {message ? (
+          <Alert
+            severity={
+              message.tone === "error"
+                ? "error"
+                : message.tone === "success"
+                  ? "success"
+                  : "info"
+            }
+            sx={{ py: 0, borderRadius: "16px" }}
+          >
+            {message.text}
+          </Alert>
+        ) : null}
+
+        <Grid
+          container
+          spacing={{ xs: 1, md: 1.5 }}
+          columns={{ xs: 12, md: 10, xl: 20 }}
+          sx={{
+            alignItems: "start",
+            minHeight: 0,
+            height: { md: desktopContentHeight },
+          }}
+        >
+          <Grid
+            size={{ xs: 12, md: 7, xl: 16 }}
+            sx={{
+              minHeight: 0,
+              minWidth: 0,
+              overflow: { md: "hidden" },
+              display: "flex",
+            }}
+          >
+            <Stack
+              spacing={{ xs: 1, md: 1.5 }}
+              sx={{ minHeight: 0, minWidth: 0, flex: 1 }}
+            >
+              <Paper
+                sx={{
+                  borderRadius: "22px",
+                  p: { xs: 1.25, md: 2 },
+                  flexShrink: 0,
+                }}
+              >
+                <Stack spacing={1.25}>
+                  <Stack
+                    direction={{ xs: "column", md: "row" }}
+                    spacing={1}
+                    justifyContent="space-between"
+                    alignItems={{ md: "center" }}
+                  >
+                    <Box>
+                      <Typography
+                        variant="subtitle1"
+                        sx={{ fontWeight: 800, color: "#4a3c58" }}
+                      >
+                        Cliente, venta y captura
+                      </Typography>
+                      <Typography
+                        sx={{ color: "text.secondary", fontSize: 12.5 }}
+                      >
+                        Enter agrega, Ctrl+B enfoca codigo y F10 procesa la
+                        venta.
+                      </Typography>
+                    </Box>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={0.75}
+                      sx={{ width: { xs: "100%", sm: "auto" } }}
+                    >
+                      <Button
+                        fullWidth={false}
+                        size="small"
+                        variant="outlined"
+                        startIcon={<UserRoundSearch className="h-4 w-4" />}
+                        onClick={applyWalkInCustomer}
+                        sx={{ width: { xs: "100%", sm: "auto" } }}
+                      >
+                        Consumidor final · F2
+                      </Button>
+                      <Button
+                        fullWidth={false}
+                        size="small"
+                        variant="text"
+                        onClick={() =>
+                          setShowExtraCustomerFields((prev) => !prev)
+                        }
+                        sx={{ width: { xs: "100%", sm: "auto" } }}
+                      >
+                        {showExtraCustomerFields
+                          ? "Ocultar extras"
+                          : "Mas datos"}
+                      </Button>
+                    </Stack>
+                  </Stack>
+
+                  <Grid container spacing={1} sx={{ minWidth: 0 }}>
+                    <Grid size={{ xs: 12, md: 4 }} sx={{ minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          p: 1.1,
+                          borderRadius: "18px",
+                          border: "1px solid rgba(205, 191, 173, 0.72)",
+                          backgroundColor: "#fbf7f1",
+                          height: "100%",
+                          minWidth: 0,
+                        }}
+                      >
+                        <Stack spacing={1}>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontWeight: 800,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                              color: "#6e5642",
+                            }}
+                          >
+                            Documento
+                          </Typography>
+                          <TextField
+                            fullWidth
+                            label="Fecha"
+                            size="small"
+                            value={format(new Date(), "dd/MM/yyyy")}
+                            InputProps={{
+                              readOnly: true,
+                            }}
+                          />
+                          <TextField
+                            select
+                            fullWidth
+                            label="Documento"
+                            size="small"
+                            value={documentType}
+                            onChange={(e) =>
+                              setDocumentType(e.target.value as PosDocumentType)
+                            }
+                          >
+                            <MenuItem value="NONE">
+                              Ticket / nota simple
+                            </MenuItem>
+                            <MenuItem
+                              value="INVOICE"
+                              disabled={!bootstrap.billingEnabled}
+                            >
+                              Factura
+                            </MenuItem>
+                          </TextField>
+                        </Stack>
+                      </Box>
+                    </Grid>
+
+                    <Grid size={{ xs: 12, md: 8 }} sx={{ minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          p: 1.1,
+                          borderRadius: "18px",
+                          border: "1px solid rgba(205, 191, 173, 0.72)",
+                          backgroundColor: "#fffdf9",
+                          minWidth: 0,
+                        }}
+                      >
+                        <Stack spacing={1}>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontWeight: 800,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                              color: "#6e5642",
+                            }}
+                          >
+                            Cliente
+                          </Typography>
+                          <Grid container spacing={1}>
+                            <Grid size={{ xs: 12, sm: 4, md: 2.5 }}>
+                              <TextField
+                                fullWidth
+                                select
+                                label="Tipo ID"
+                                size="small"
+                                value={customer.tipoIdentificacion}
+                                onChange={(e) =>
+                                  selectCustomer({
+                                    tipoIdentificacion: e.target.value,
+                                  })
+                                }
+                              >
+                                {IDENTIFICATION_TYPES.map((type) => (
+                                  <MenuItem key={type.code} value={type.code}>
+                                    {type.label}
+                                  </MenuItem>
+                                ))}
+                              </TextField>
+                            </Grid>
+                            <Grid size={{ xs: 12, sm: 8, md: 4.5 }}>
+                              <TextField
+                                fullWidth
+                                label="Identificacion"
+                                size="small"
+                                value={customer.identificacion}
+                                onChange={(e) =>
+                                  selectCustomer({
+                                    identificacion: e.target.value,
+                                  })
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    searchCustomerByIdentification();
+                                  }
+                                }}
+                                InputProps={{
+                                  endAdornment: (
+                                    <InputAdornment position="end">
+                                      <IconButton
+                                        size="small"
+                                        edge="end"
+                                        onClick={searchCustomerByIdentification}
+                                      >
+                                        <Search className="h-4 w-4" />
+                                      </IconButton>
+                                    </InputAdornment>
+                                  ),
+                                }}
+                              />
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 5 }}>
+                              <TextField
+                                fullWidth
+                                label="Nombre / razon social"
+                                size="small"
+                                inputRef={customerNameInputRef}
+                                value={customer.razonSocial}
+                                onChange={(e) =>
+                                  selectCustomer({
+                                    razonSocial: e.target.value,
+                                  })
+                                }
+                              />
+                            </Grid>
+                            <Grid size={{ xs: 12 }}>
+                              <TextField
+                                fullWidth
+                                label="Email"
+                                size="small"
+                                value={customer.email}
+                                onChange={(e) =>
+                                  selectCustomer({ email: e.target.value })
+                                }
+                              />
+                            </Grid>
+                          </Grid>
+                          {activeHeldSaleId ? (
+                            <Stack
+                              direction="row"
+                              spacing={0.6}
+                              flexWrap="wrap"
+                              useFlexGap
+                            >
+                              <Chip
+                                size="small"
+                                label="Venta en espera"
+                                sx={{
+                                  borderRadius: "999px",
+                                  backgroundColor: "#efe7ff",
+                                  color: "#5a3a8a",
+                                }}
+                              />
+                            </Stack>
+                          ) : null}
+                        </Stack>
+                      </Box>
+                    </Grid>
+                  </Grid>
+
+                  <Collapse in={showExtraCustomerFields}>
+                    <Grid container spacing={1}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          label="Direccion"
+                          size="small"
+                          value={customer.direccion}
+                          onChange={(e) =>
+                            selectCustomer({ direccion: e.target.value })
+                          }
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <TextField
+                          fullWidth
+                          label="Telefono"
+                          size="small"
+                          value={customer.telefono}
+                          onChange={(e) =>
+                            selectCustomer({ telefono: e.target.value })
+                          }
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 3, md: 2 }}>
+                        <TextField
+                          fullWidth
+                          label="Etiqueta espera"
+                          size="small"
+                          value={heldLabel}
+                          onChange={(e) => setHeldLabel(e.target.value)}
+                          placeholder="Mesa 2"
+                        />
+                      </Grid>
+                    </Grid>
+                  </Collapse>
+
+                  <Paper
+                    sx={{
+                      p: 1.1,
+                      borderRadius: "18px",
+                      border: "1px solid rgba(205, 191, 173, 0.72)",
+                      backgroundColor: "#fffdf9",
+                      minWidth: 0,
+                    }}
+                  >
+                    <Stack spacing={0.9}>
+                      <Stack
+                        direction={{ xs: "column", md: "row" }}
+                        spacing={1}
+                        justifyContent="space-between"
+                        alignItems={{ md: "center" }}
+                      >
+                        <Box>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontWeight: 800,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                              color: "#6e5642",
+                            }}
+                          >
+                            Ingreso rapido de producto
+                          </Typography>
+                          <Typography
+                            sx={{ color: "text.secondary", fontSize: 12.5 }}
+                          >
+                            Primero codigo, despues busqueda manual si hace
+                            falta.
+                          </Typography>
+                        </Box>
+                        <Chip
+                          size="small"
+                          label="Ctrl+B vuelve a codigo"
+                          sx={{
+                            alignSelf: "flex-start",
+                            borderRadius: "999px",
+                            backgroundColor: "#f1e7d8",
+                            color: "#6e5642",
+                          }}
+                        />
+                      </Stack>
+
+                      <Grid
+                        container
+                        spacing={1}
+                        columns={{ xs: 12, md: 20 }}
+                        sx={{ minWidth: 0 }}
+                      >
+                        <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
+                          <TextField
+                            fullWidth
+                            label="Codigo / barra"
+                            size="small"
+                            inputRef={barcodeInputRef}
+                            value={barcodeQuery}
+                            onChange={(e) => setBarcodeQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleAddByCode();
+                              }
+                            }}
+                            placeholder="Escanear o escribir codigo"
+                            InputProps={{
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <IconButton
+                                    size="small"
+                                    edge="end"
+                                    onClick={handleAddByCode}
+                                  >
+                                    <ScanLine className="h-4 w-4" />
+                                  </IconButton>
+                                </InputAdornment>
+                              ),
+                            }}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 12 }} sx={{ minWidth: 0 }}>
+                          <Autocomplete
+                            options={products}
+                            value={manualProduct}
+                            onChange={(_, value) => setManualProduct(value)}
+                            getOptionLabel={(option) =>
+                              `${option.codigo} · ${option.nombre}`
+                            }
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                fullWidth
+                                label="Agregar manualmente"
+                                size="small"
+                                placeholder="Buscar por nombre o codigo"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && manualProduct) {
+                                    e.preventDefault();
+                                    handleAddManualProduct();
+                                  }
+                                }}
+                                InputProps={{
+                                  ...params.InputProps,
+                                  startAdornment: (
+                                    <>
+                                      <InputAdornment position="start">
+                                        <Search className="h-4 w-4" />
+                                      </InputAdornment>
+                                      {params.InputProps.startAdornment}
+                                    </>
+                                  ),
+                                }}
+                              />
+                            )}
+                            renderOption={(props, option) => {
+                              const { key, ...optionProps } = props;
+
+                              return (
+                                <Box component="li" key={key} {...optionProps}>
+                                  <Stack spacing={0.2} sx={{ width: "100%" }}>
+                                    <Typography
+                                      variant="body2"
+                                      sx={{ fontWeight: 700 }}
+                                    >
+                                      {option.nombre}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      sx={{ color: "text.secondary" }}
+                                    >
+                                      {option.codigo} ·{" "}
+                                      {formatCurrency(option.precio)} ·{" "}
+                                      {option.tipoProducto === "BIEN"
+                                        ? `Stock ${option.stock.toFixed(3)}`
+                                        : "Servicio"}
+                                    </Typography>
+                                  </Stack>
+                                </Box>
+                              );
+                            }}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+                          <TextField
+                            fullWidth
+                            label="Cant."
+                            type="number"
+                            size="small"
+                            value={entryQuantity}
+                            onChange={(e) => setEntryQuantity(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key !== "Enter") {
+                                return;
+                              }
+
+                              e.preventDefault();
+                              if (barcodeQuery.trim()) {
+                                handleAddByCode();
+                                return;
+                              }
+
+                              if (manualProduct) {
+                                handleAddManualProduct();
+                              }
+                            }}
+                            inputProps={{ min: 0.001, step: "0.001" }}
+                          />
+                        </Grid>
+                        {/* <Grid size={{ xs: 12, sm: 8, md: 2 }}>
+                          <Button
+                            fullWidth
+                            size="small"
+                            variant="contained"
+                            startIcon={<Plus className="h-4 w-4" />}
+                            onClick={handleAddManualProduct}
+                            sx={{ minHeight: 40 }}
+                          >
+                            Agregar
+                          </Button>
+                        </Grid> */}
+                      </Grid>
+                    </Stack>
+                  </Paper>
+                </Stack>
+              </Paper>
+
+              <Paper
+                sx={{
+                  borderRadius: "22px",
+                  p: { xs: 1.25, md: 2 },
+                  flex: 1,
+                  minHeight: 0,
+                  display: "flex",
+                  minWidth: 0,
+                }}
+              >
+                <Stack
+                  spacing={1.25}
+                  sx={{ flex: 1, minHeight: 0, minWidth: 0 }}
+                >
+                  <Stack
+                    direction={{ xs: "column", md: "row" }}
+                    justifyContent="space-between"
+                    spacing={1}
+                  >
+                    <Box>
+                      <Typography
+                        variant="subtitle1"
+                        sx={{ fontWeight: 800, color: "#4a3c58" }}
+                      >
+                        Detalle de productos
+                      </Typography>
+                      {/* <Typography
+                        sx={{ color: "text.secondary", fontSize: 12.5 }}
+                      >
+                        Tabla rapida para editar cantidades, precio y descuento.
+                      </Typography> */}
+                    </Box>
+                    <Chip
+                      label={`${linePreview.length} item${linePreview.length === 1 ? "" : "s"}`}
+                      size="small"
+                      sx={{ alignSelf: "flex-start", borderRadius: "999px" }}
+                    />
+                  </Stack>
+
+                  <Box
+                    sx={{
+                      overflowX: "auto",
+                      overflowY: "hidden",
+                      borderRadius: "18px",
+                      border: "1px solid rgba(205, 191, 173, 0.72)",
+                      flex: 1,
+                      minHeight: 0,
+                      minWidth: 0,
+                    }}
+                  >
+                    <DataGrid
+                      rows={linePreview}
+                      columns={dataGridColumns}
+                      getRowId={(row) => row.productId}
+                      disableRowSelectionOnClick
+                      disableColumnMenu
+                      hideFooterSelectedRowCount
+                      hideFooter
+                      density="compact"
+                      columnHeaderHeight={34}
+                      rowHeight={68}
+                      localeText={{
+                        noRowsLabel: "Todavia no hay productos agregados.",
+                      }}
+                      sx={{
+                        height: "100%",
+                        minWidth: { xs: 860, md: 0 },
+                        border: "none",
+                        "& .MuiDataGrid-columnHeaders": {
+                          minHeight: "34px !important",
+                          maxHeight: "34px !important",
+                          backgroundColor: "#f8f2ea",
+                          borderBottom: "1px solid rgba(205, 191, 173, 0.72)",
+                        },
+                        "& .MuiDataGrid-cell": {
+                          fontSize: 12,
+                          alignItems: "center",
+                          px: 0.75,
+                          py: 0.25,
+                          borderColor: "rgba(205, 191, 173, 0.42)",
+                        },
+                        "& .MuiDataGrid-columnHeader": {
+                          px: 0.75,
+                          py: 0,
+                          minHeight: "34px !important",
+                        },
+                        "& .MuiDataGrid-columnHeaderTitle": {
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                        },
+                        "& .MuiDataGrid-columnSeparator": {
+                          display: "none",
+                        },
+                        "& .MuiDataGrid-row": {
+                          backgroundColor: "#fffdf9",
+                        },
+                        "& .MuiDataGrid-row:hover": {
+                          backgroundColor: "#f9f1e7",
+                        },
+                        "& .MuiDataGrid-cellContent": {
+                          lineHeight: 1.15,
+                        },
+                        "& .MuiDataGrid-cell:focus, & .MuiDataGrid-columnHeader:focus":
+                          {
+                            outline: "none",
+                          },
+                      }}
+                    />
+                  </Box>
+                </Stack>
+              </Paper>
+            </Stack>
+          </Grid>
+
+          <Grid
+            size={{ xs: 12, md: 3, xl: 4 }}
+            sx={{ minHeight: 0, minWidth: 0, display: "flex" }}
+          >
+            <Stack spacing={1.5} sx={{ minHeight: 0, minWidth: 0, flex: 1 }}>
+              <Paper
+                sx={{
+                  borderRadius: "22px",
+                  p: { xs: 1.25, md: 2 },
+                  height: { md: "100%" },
+                  display: "flex",
+                  minWidth: 0,
+                  overflow: "hidden",
+                }}
+              >
+                <Stack
+                  spacing={1.5}
+                  sx={{ flex: 1, minHeight: 0, minWidth: 0 }}
+                >
+                  <Box>
+                    <Typography
+                      variant="subtitle1"
+                      sx={{ fontWeight: 800, color: "#4a3c58" }}
+                    >
+                      Resumen de cobro
+                    </Typography>
+                    {/* <Typography
+                      sx={{ color: "text.secondary", fontSize: 12.5 }}
+                    >
+                      Total, desglose y medios de pago.
+                    </Typography> */}
+                  </Box>
+
+                  <Paper
+                    sx={{
+                      p: { xs: 1.5, sm: 2 },
+                      borderRadius: "20px",
+                      background:
+                        "linear-gradient(180deg, #c01e31 0%, #8b1120 100%)",
+                      color: "#fff",
+                      borderColor: "rgba(111, 13, 24, 0.3)",
+                      minWidth: 0,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <Stack spacing={1} alignItems="center">
+                      <Typography
+                        sx={{
+                          fontSize: 12,
+                          letterSpacing: "0.14em",
+                          textTransform: "uppercase",
+                          opacity: 0.82,
+                        }}
+                      >
+                        Total a pagar
+                      </Typography>
+                      <Typography
+                        sx={{
+                          fontSize: { xs: 28, sm: 34, xl: 40 },
+                          fontWeight: 900,
+                          lineHeight: 1,
+                          textAlign: "center",
+                          width: "100%",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {formatCurrency(totals.total)}
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label={
+                          documentType === "INVOICE" ? "Factura" : "Ticket"
+                        }
+                        sx={{
+                          borderRadius: "999px",
+                          backgroundColor: "rgba(255,255,255,0.14)",
+                          color: "#fff",
+                          border: "1px solid rgba(255,255,255,0.16)",
+                        }}
+                      />
+                    </Stack>
+                  </Paper>
+
+                  <Paper
+                    sx={{
+                      p: 1.5,
+                      borderRadius: "18px",
+                      backgroundColor: "#fbf7f1",
+                      borderColor: "rgba(205, 191, 173, 0.72)",
+                      minWidth: 0,
+                    }}
+                  >
+                    <Stack spacing={0.85}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 800,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: "#6e5642",
+                        }}
+                      >
+                        Desglose
+                      </Typography>
+                      <Stack direction="row" justifyContent="space-between">
+                        <Typography color="text.secondary" variant="body2">
+                          Subtotal
+                        </Typography>
+                        <Typography fontWeight={700} variant="body2">
+                          {formatCurrency(totals.subtotal)}
+                        </Typography>
+                      </Stack>
+                      <Stack direction="row" justifyContent="space-between">
+                        <Typography color="text.secondary" variant="body2">
+                          Descuento
+                        </Typography>
+                        <Typography fontWeight={700} variant="body2">
+                          {formatCurrency(totals.discount)}
+                        </Typography>
+                      </Stack>
+                      <Stack direction="row" justifyContent="space-between">
+                        <Typography color="text.secondary" variant="body2">
+                          IVA
+                        </Typography>
+                        <Typography fontWeight={700} variant="body2">
+                          {formatCurrency(totals.tax)}
+                        </Typography>
+                      </Stack>
+                      <Divider />
+                      <Stack direction="row" justifyContent="space-between">
+                        <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                          Neto
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{ fontWeight: 800, color: "#8b1120" }}
+                        >
+                          {formatCurrency(totals.total)}
+                        </Typography>
+                      </Stack>
+                    </Stack>
+                  </Paper>
+
+                  <Paper
+                    sx={{
+                      p: 1.5,
+                      borderRadius: "18px",
+                      backgroundColor: "#fcfaf6",
+                      borderColor: "rgba(205, 191, 173, 0.72)",
+                      minWidth: 0,
+                    }}
+                  >
+                    <Stack spacing={1} sx={{ minWidth: 0 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 800,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: "#6e5642",
+                        }}
+                      >
+                        Medios de pago
+                      </Typography>
+                      <Stack
+                        direction="row"
+                        spacing={0.75}
+                        flexWrap="wrap"
+                        useFlexGap
+                      >
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<Plus className="h-4 w-4" />}
+                          onClick={addPaymentLine}
+                        >
+                          Agregar
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={fillRemainingPayment}
+                        >
+                          Completar
+                        </Button>
+                      </Stack>
+
+                      <Stack
+                        spacing={0.85}
+                        sx={{
+                          overflowY: { xs: "visible", md: "auto" },
+                          pt: 0.8,
+                          pr: { md: 0.25 },
+                          minWidth: 0,
+                        }}
+                      >
+                        {paymentLines.map((line) => (
+                          <Stack
+                            key={line.id}
+                            direction={{ xs: "column", sm: "row" }}
+                            spacing={0.75}
+                            alignItems={{ xs: "stretch", sm: "center" }}
+                            sx={{ minWidth: 0 }}
+                          >
+                            <TextField
+                              select
+                              size="small"
+                              label="Medio"
+                              value={line.formaPago}
+                              onChange={(e) =>
+                                updatePaymentLine(line.id, {
+                                  formaPago: e.target.value,
+                                })
+                              }
+                              sx={{ flex: 1, minWidth: 0 }}
+                            >
+                              {PAYMENT_METHODS.map((method) => (
+                                <MenuItem key={method.code} value={method.code}>
+                                  {method.label}
+                                </MenuItem>
+                              ))}
+                            </TextField>
+                            <TextField
+                              size="small"
+                              label="Valor"
+                              type="number"
+                              value={line.total}
+                              onChange={(e) =>
+                                updatePaymentLine(line.id, {
+                                  total: e.target.value,
+                                })
+                              }
+                              inputProps={{ min: 0, step: "0.01" }}
+                              sx={{ width: { xs: "100%", sm: 106 } }}
+                              InputProps={{
+                                startAdornment: (
+                                  <InputAdornment position="start">
+                                    $
+                                  </InputAdornment>
+                                ),
+                              }}
+                            />
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => removePaymentLine(line.id)}
+                              disabled={paymentLines.length === 1}
+                              sx={{
+                                alignSelf: { xs: "flex-end", sm: "center" },
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </IconButton>
+                          </Stack>
+                        ))}
+                      </Stack>
+
+                      <TextField
+                        size="small"
+                        label="Recibido en efectivo"
+                        type="number"
+                        value={cashReceived}
+                        onChange={(e) => {
+                          setCashReceivedTouched(true);
+                          setCashReceived(e.target.value);
+                        }}
+                        inputProps={{ min: 0, step: "0.01" }}
+                        disabled={cashPaymentAllocated <= 0}
+                        helperText={
+                          cashPaymentAllocated > 0
+                            ? "Se usa para calcular vuelto del efectivo."
+                            : "Activa una linea en efectivo para calcular vuelto."
+                        }
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">$</InputAdornment>
+                          ),
+                        }}
+                      />
+
+                      <Stack spacing={0.5}>
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography color="text.secondary" variant="body2">
+                            Registrado
+                          </Typography>
+                          <Typography fontWeight={700} variant="body2">
+                            {formatCurrency(allocatedAmount)}
+                          </Typography>
+                        </Stack>
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography color="text.secondary" variant="body2">
+                            Pendiente
+                          </Typography>
+                          <Typography
+                            fontWeight={700}
+                            variant="body2"
+                            color={remainingAmount > 0 ? "#8b1120" : "inherit"}
+                          >
+                            {formatCurrency(remainingAmount)}
+                          </Typography>
+                        </Stack>
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography color="text.secondary" variant="body2">
+                            Vuelto
+                          </Typography>
+                          <Typography fontWeight={700} variant="body2">
+                            {formatCurrency(changeAmount)}
+                          </Typography>
+                        </Stack>
+                      </Stack>
+                    </Stack>
+                  </Paper>
+                </Stack>
+              </Paper>
+            </Stack>
+          </Grid>
+        </Grid>
+      </Stack>
+
+      <PosCashSessionDialog
+        open={cashDialogOpen}
+        submitting={cashSubmitting}
+        cashSession={cashSession}
+        openingAmount={openingAmount}
+        openingNotes={openingNotes}
+        closingAmount={closingAmount}
+        closingNotes={closingNotes}
+        onOpeningAmountChange={setOpeningAmount}
+        onOpeningNotesChange={setOpeningNotes}
+        onClosingAmountChange={setClosingAmount}
+        onClosingNotesChange={setClosingNotes}
+        onOpenCash={() => void openCash()}
+        onCloseCash={() => void closeCash()}
+        onClose={() => setCashDialogOpen(false)}
+      />
+      <PosHeldSalesDialog
+        open={heldSalesDialogOpen}
+        heldSales={heldSales}
+        activeHeldSaleId={activeHeldSaleId}
+        onClose={() => setHeldSalesDialogOpen(false)}
+        onLoadHeldSale={(heldSaleId) => {
+          const heldSale = heldSales.find((item) => item.id === heldSaleId);
+          if (!heldSale) {
+            return;
+          }
+          setHeldSalesDialogOpen(false);
+          loadHeldSale(heldSale);
+        }}
+        onDeleteHeldSale={(heldSaleId) => {
+          void removeHeldSale(heldSaleId);
+        }}
+      />
+    </Box>
+  );
+}

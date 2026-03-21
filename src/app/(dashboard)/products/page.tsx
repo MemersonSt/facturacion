@@ -3,9 +3,9 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { fetchJson } from "@/components/mvp-dashboard-api";
-import { DeleteProductModal, EditProductModal, ProductModal } from "@/components/mvp-dashboard-modals";
-import { type EditProductForm, type NewProductForm, type Product } from "@/components/mvp-dashboard-types";
+import { fetchJson } from "@/shared/dashboard/api";
+import { DeleteProductModal, EditProductModal, ProductModal } from "@/shared/dashboard/modals";
+import { type EditProductForm, type NewProductForm, type Product } from "@/shared/dashboard/types";
 import { ProductsSection } from "@/modules/products/components/products-section";
 
 export default function ProductsPage() {

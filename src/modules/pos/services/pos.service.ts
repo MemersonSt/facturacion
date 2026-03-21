@@ -1,0 +1,377 @@
+import {
+  BusinessFeatureKey,
+  PosCashSessionStatus,
+  Prisma,
+} from "@prisma/client";
+
+import { ensureDefaultBusiness, getBusinessContextById, hasBusinessFeature } from "@/core/business/business.service";
+import { listProducts } from "@/core/inventory/inventory.service";
+import type { SessionPayload } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { roundMoney } from "@/lib/utils";
+import {
+  closeCashSessionSchema,
+  heldSalePayloadSchema,
+  holdSaleSchema,
+  openCashSessionSchema,
+  type HoldSalePayload,
+} from "@/modules/pos/services/pos.schemas";
+
+type PosCashSessionSummary = {
+  id: string;
+  status: PosCashSessionStatus;
+  openingAmount: number;
+  closingAmount: number | null;
+  notes: string | null;
+  openedAt: Date;
+  closedAt: Date | null;
+  salesCount: number;
+  salesTotal: number;
+};
+
+function getDefaultDocumentType(
+  features: readonly BusinessFeatureKey[],
+  requiresElectronicBilling: boolean | undefined,
+) {
+  return hasBusinessFeature(features, "BILLING") && requiresElectronicBilling ? "INVOICE" : "NONE";
+}
+
+async function getPosBusinessContext(session: SessionPayload) {
+  const business = session.businessId
+    ? await getBusinessContextById(session.businessId)
+    : await ensureDefaultBusiness();
+
+  if (!hasBusinessFeature(business.enabledFeatures, "POS")) {
+    throw new Error("Modulo POS no habilitado para este negocio");
+  }
+
+  return business;
+}
+
+async function getCashSessionSummary(rawSession: {
+  id: string;
+  openedById: string;
+  status: PosCashSessionStatus;
+  openingAmount: Prisma.Decimal;
+  closingAmount: Prisma.Decimal | null;
+  notes: string | null;
+  openedAt: Date;
+  closedAt: Date | null;
+}) {
+  const salesWhere: Prisma.SaleWhereInput = {
+    createdById: rawSession.openedById,
+    createdAt: {
+      gte: rawSession.openedAt,
+      ...(rawSession.closedAt ? { lte: rawSession.closedAt } : {}),
+    },
+  };
+  const [salesCount, salesAggregate] = await Promise.all([
+    prisma.sale.count({ where: salesWhere }),
+    prisma.sale.aggregate({
+      where: salesWhere,
+      _sum: {
+        total: true,
+      },
+    }),
+  ]);
+
+  return {
+    id: rawSession.id,
+    status: rawSession.status,
+    openingAmount: Number(rawSession.openingAmount),
+    closingAmount: rawSession.closingAmount ? Number(rawSession.closingAmount) : null,
+    notes: rawSession.notes,
+    openedAt: rawSession.openedAt,
+    closedAt: rawSession.closedAt,
+    salesCount,
+    salesTotal: Number(salesAggregate._sum.total ?? 0),
+  } satisfies PosCashSessionSummary;
+}
+
+async function getOpenCashSession(session: SessionPayload, businessId: string) {
+  const cashSession = await prisma.posCashSession.findFirst({
+    where: {
+      businessId,
+      openedById: session.sub,
+      status: PosCashSessionStatus.OPEN,
+    },
+    orderBy: {
+      openedAt: "desc",
+    },
+  });
+
+  if (!cashSession) {
+    return null;
+  }
+
+  return getCashSessionSummary(cashSession);
+}
+
+function toHeldSaleSummary(rawHeldSale: {
+  id: string;
+  label: string;
+  payload: Prisma.JsonValue;
+  updatedAt: Date;
+}) {
+  const parsed = heldSalePayloadSchema.safeParse(rawHeldSale.payload);
+  const payload = parsed.success ? parsed.data : null;
+  const total = payload
+    ? roundMoney(payload.items.reduce((acc, item) => acc + item.cantidad * item.precioUnitario - item.descuento, 0))
+    : 0;
+
+  return {
+    id: rawHeldSale.id,
+    label: rawHeldSale.label,
+    updatedAt: rawHeldSale.updatedAt,
+    itemCount: payload?.items.length ?? 0,
+    total,
+    payload,
+  };
+}
+
+async function listPosCustomers() {
+  const customers = await prisma.customer.findMany({
+    select: {
+      id: true,
+      tipoIdentificacion: true,
+      identificacion: true,
+      razonSocial: true,
+      direccion: true,
+      email: true,
+      telefono: true,
+      createdAt: true,
+      updatedAt: true,
+      _count: {
+        select: {
+          sales: true,
+        },
+      },
+      sales: {
+        select: {
+          createdAt: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 1,
+      },
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+    take: 40,
+  });
+
+  return customers.map((customer) => ({
+    id: customer.id,
+    tipoIdentificacion: customer.tipoIdentificacion,
+    identificacion: customer.identificacion,
+    razonSocial: customer.razonSocial,
+    direccion: customer.direccion,
+    email: customer.email,
+    telefono: customer.telefono,
+    purchaseCount: customer._count.sales,
+    lastPurchaseAt: customer.sales[0]?.createdAt ?? null,
+  }));
+}
+
+export async function getPosBootstrap(session: SessionPayload) {
+  const business = await getPosBusinessContext(session);
+
+  const [products, customers, heldSales, cashSession] = await Promise.all([
+    listProducts(),
+    listPosCustomers(),
+    prisma.posHeldSale.findMany({
+      where: {
+        businessId: business.id,
+        createdById: session.sub,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      take: 12,
+    }),
+    getOpenCashSession(session, business.id),
+  ]);
+
+  return {
+    business: {
+      id: business.id,
+      name: business.name,
+    },
+    operator: {
+      id: session.sub,
+      name: session.name,
+      role: session.role,
+    },
+    features: business.enabledFeatures,
+    billingEnabled: hasBusinessFeature(business.enabledFeatures, "BILLING"),
+    defaultDocumentType: getDefaultDocumentType(
+      business.enabledFeatures,
+      business.taxProfile?.requiresElectronicBilling,
+    ),
+    defaultIssuerId: business.taxProfile?.issuerId ?? session.sub,
+    cashSession,
+    heldSales: heldSales.map(toHeldSaleSummary),
+    customers,
+    products,
+  };
+}
+
+export async function openCashSession(session: SessionPayload, rawInput: unknown) {
+  const business = await getPosBusinessContext(session);
+  const input = openCashSessionSchema.parse(rawInput);
+  const existing = await getOpenCashSession(session, business.id);
+
+  if (existing) {
+    throw new Error("Ya existe una caja abierta para este usuario");
+  }
+
+  const cashSession = await prisma.posCashSession.create({
+    data: {
+      businessId: business.id,
+      openedById: session.sub,
+      openingAmount: input.openingAmount,
+      notes: input.notes || null,
+    },
+  });
+
+  return getCashSessionSummary(cashSession);
+}
+
+export async function closeCashSession(session: SessionPayload, rawInput: unknown) {
+  const business = await getPosBusinessContext(session);
+  const input = closeCashSessionSchema.parse(rawInput);
+
+  const existing = await prisma.posCashSession.findFirst({
+    where: {
+      businessId: business.id,
+      openedById: session.sub,
+      status: PosCashSessionStatus.OPEN,
+    },
+    orderBy: {
+      openedAt: "desc",
+    },
+  });
+
+  if (!existing) {
+    throw new Error("No existe una caja abierta para cerrar");
+  }
+
+  const updated = await prisma.posCashSession.update({
+    where: {
+      id: existing.id,
+    },
+    data: {
+      status: PosCashSessionStatus.CLOSED,
+      closingAmount: input.closingAmount,
+      closedAt: new Date(),
+      closedById: session.sub,
+      notes: input.notes || existing.notes,
+    },
+  });
+
+  return getCashSessionSummary(updated);
+}
+
+export async function listHeldSales(session: SessionPayload) {
+  const business = await getPosBusinessContext(session);
+
+  const heldSales = await prisma.posHeldSale.findMany({
+    where: {
+      businessId: business.id,
+      createdById: session.sub,
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+    take: 20,
+  });
+
+  return heldSales.map(toHeldSaleSummary);
+}
+
+export async function holdSale(session: SessionPayload, rawInput: unknown) {
+  const business = await getPosBusinessContext(session);
+  const input = holdSaleSchema.parse(rawInput);
+  const payload = input.payload satisfies HoldSalePayload;
+
+  if (input.heldSaleId) {
+    const existing = await prisma.posHeldSale.findFirst({
+      where: {
+        id: input.heldSaleId,
+        businessId: business.id,
+        createdById: session.sub,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      throw new Error("La venta en espera no existe o no pertenece al usuario actual");
+    }
+
+    const updated = await prisma.posHeldSale.update({
+      where: {
+        id: existing.id,
+      },
+      data: {
+        label: input.label,
+        payload: payload as Prisma.InputJsonValue,
+      },
+      select: {
+        id: true,
+        label: true,
+        payload: true,
+        updatedAt: true,
+      },
+    });
+
+    return toHeldSaleSummary(updated);
+  }
+
+  const created = await prisma.posHeldSale.create({
+    data: {
+      businessId: business.id,
+      createdById: session.sub,
+      label: input.label,
+      payload: payload as Prisma.InputJsonValue,
+    },
+    select: {
+      id: true,
+      label: true,
+      payload: true,
+      updatedAt: true,
+    },
+  });
+
+  return toHeldSaleSummary(created);
+}
+
+export async function deleteHeldSale(session: SessionPayload, heldSaleId: string) {
+  const business = await getPosBusinessContext(session);
+
+  const heldSale = await prisma.posHeldSale.findFirst({
+    where: {
+      id: heldSaleId,
+      businessId: business.id,
+      createdById: session.sub,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!heldSale) {
+    throw new Error("La venta en espera no existe o no pertenece al usuario actual");
+  }
+
+  await prisma.posHeldSale.delete({
+    where: {
+      id: heldSale.id,
+    },
+  });
+
+  return { id: heldSale.id };
+}

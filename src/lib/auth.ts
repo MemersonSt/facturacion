@@ -4,12 +4,18 @@ import { cookies } from "next/headers";
 export const SESSION_COOKIE = "arg_session";
 const JWT_ALG = "HS256";
 const JWT_TTL_SECONDS = 60 * 60 * 8; // 8 horas
+const DEFAULT_SESSION_FEATURES = ["BILLING", "QUOTES"] as const;
+
+export type SessionFeatureKey = (typeof DEFAULT_SESSION_FEATURES)[number] | "POS";
 
 export type SessionPayload = {
   sub: string;
+  businessId: string;
+  businessName: string;
   name: string;
   email: string;
   role: "ADMIN" | "SELLER";
+  features: SessionFeatureKey[];
 };
 
 export function getJwtSecret(): Uint8Array {
@@ -29,7 +35,31 @@ export async function signSession(payload: SessionPayload): Promise<string> {
 export async function verifySession(token: string): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
-    return payload as unknown as SessionPayload;
+    if (
+      typeof payload.sub !== "string" ||
+      typeof payload.name !== "string" ||
+      typeof payload.email !== "string" ||
+      (payload.role !== "ADMIN" && payload.role !== "SELLER")
+    ) {
+      return null;
+    }
+
+    const features = Array.isArray(payload.features)
+      ? payload.features.filter(
+          (feature): feature is SessionFeatureKey =>
+            feature === "BILLING" || feature === "POS" || feature === "QUOTES",
+        )
+      : [...DEFAULT_SESSION_FEATURES];
+
+    return {
+      sub: payload.sub,
+      businessId: typeof payload.businessId === "string" ? payload.businessId : "",
+      businessName: typeof payload.businessName === "string" ? payload.businessName : "Negocio Principal",
+      name: payload.name,
+      email: payload.email,
+      role: payload.role,
+      features: features.length > 0 ? features : [...DEFAULT_SESSION_FEATURES],
+    };
   } catch {
     return null;
   }

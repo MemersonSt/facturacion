@@ -18,8 +18,8 @@ import {
   type LineItem,
   type LinePreviewItem,
   type PaymentMethodOption,
-} from "@/components/mvp-dashboard-types";
-import { DocumentWorkspaceHeader } from "@/modules/shared/document-composer/components/document-workspace-header";
+} from "@/shared/dashboard/types";
+import { DocumentWorkspaceHeader } from "@/shared/document-composer/components/document-workspace-header";
 import Box from "@mui/material/Box";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";

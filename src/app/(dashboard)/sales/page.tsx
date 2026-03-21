@@ -5,8 +5,8 @@ import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchJson } from "@/components/mvp-dashboard-api";
-import { CustomerPickerModal, ProductPickerModal } from "@/components/mvp-dashboard-modals";
+import { fetchJson } from "@/shared/dashboard/api";
+import { CustomerPickerModal, ProductPickerModal } from "@/shared/dashboard/modals";
 import {
   SalesMessagePopover,
   type SalesMessage,
@@ -23,7 +23,7 @@ import {
   type Product,
   type QuoteDetail,
   type Quote,
-} from "@/components/mvp-dashboard-types";
+} from "@/shared/dashboard/types";
 
 type CheckoutResponse = {
   saleNumber: string;
