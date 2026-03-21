@@ -23,6 +23,9 @@ type PendingRequest = {
 
 export function useLocalPrintSocket() {
   const socketRef = useRef<WebSocket | null>(null);
+  const connectPromiseRef = useRef<Promise<WebSocket> | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const shouldReconnectRef = useRef(true);
   const pendingRequestRef = useRef<Map<SocketAction, PendingRequest>>(
     new Map(),
   );
@@ -34,14 +37,6 @@ export function useLocalPrintSocket() {
         ? null
         : window.localStorage.getItem(PRINTER_STORAGE_KEY),
   );
-
-  useEffect(() => {
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.close();
-      }
-    };
-  }, []);
 
   function setSelectedPrinter(nextPrinter: string | null) {
     setSelectedPrinterState(nextPrinter);
@@ -66,49 +61,106 @@ export function useLocalPrintSocket() {
     pendingRequestRef.current.clear();
   }
 
-  function attachSocketListeners(socket: WebSocket) {
-    socket.onopen = () => {
-      setIsConnected(true);
-    };
+  function scheduleReconnect() {
+    if (!shouldReconnectRef.current || reconnectTimeoutRef.current !== null) {
+      return;
+    }
 
-    socket.onclose = () => {
-      setIsConnected(false);
-      socketRef.current = null;
-      rejectPendingRequests(new Error("La conexion con la impresora local se cerro"));
-    };
+    reconnectTimeoutRef.current = window.setTimeout(() => {
+      reconnectTimeoutRef.current = null;
+      void connect().catch(() => {
+        scheduleReconnect();
+      });
+    }, 1800);
+  }
 
-    socket.onerror = () => {
-      setIsConnected(false);
-    };
+  function handleSocketMessage(event: MessageEvent<string>) {
+    try {
+      const parsed = JSON.parse(event.data) as SocketEnvelope;
 
-    socket.onmessage = (event) => {
+      if (
+        parsed.Action === "GetPrinters" &&
+        parsed.StatusCode === 200 &&
+        Array.isArray(parsed.ResponseModel)
+      ) {
+        setPrinters(
+          parsed.ResponseModel.filter(
+            (value): value is string => typeof value === "string",
+          ),
+        );
+      }
+
+      const pending = pendingRequestRef.current.get(parsed.Action);
+      if (!pending) {
+        return;
+      }
+
+      window.clearTimeout(pending.timeoutId);
+      pendingRequestRef.current.delete(parsed.Action);
+      pending.resolve(parsed);
+    } catch {
+      // Ignore invalid socket payloads from the local service.
+    }
+  }
+
+  function connect() {
+    const current = socketRef.current;
+    if (current?.readyState === WebSocket.OPEN) {
+      return Promise.resolve(current);
+    }
+
+    if (connectPromiseRef.current) {
+      return connectPromiseRef.current;
+    }
+
+    connectPromiseRef.current = new Promise<WebSocket>((resolve, reject) => {
       try {
-        const parsed = JSON.parse(event.data) as SocketEnvelope;
+        const socket = new WebSocket(LOCAL_PRINT_WS_URL);
+        socketRef.current = socket;
 
-        if (
-          parsed.Action === "GetPrinters" &&
-          parsed.StatusCode === 200 &&
-          Array.isArray(parsed.ResponseModel)
-        ) {
-          setPrinters(
-            parsed.ResponseModel.filter((value): value is string =>
-              typeof value === "string",
+        socket.onopen = () => {
+          setIsConnected(true);
+          if (reconnectTimeoutRef.current) {
+            window.clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
+          connectPromiseRef.current = null;
+          resolve(socket);
+          void sendRequest("GetPrinters", null).catch(() => {
+            // The bridge may connect before the printer service is ready.
+          });
+        };
+
+        socket.onclose = () => {
+          setIsConnected(false);
+          socketRef.current = null;
+          connectPromiseRef.current = null;
+          rejectPendingRequests(
+            new Error("La conexion con la impresora local se cerro"),
+          );
+          scheduleReconnect();
+        };
+
+        socket.onerror = () => {
+          setIsConnected(false);
+          connectPromiseRef.current = null;
+          reject(
+            new Error(
+              "No se pudo conectar con el servicio local de impresion",
             ),
           );
-        }
+        };
 
-        const pending = pendingRequestRef.current.get(parsed.Action);
-        if (!pending) {
-          return;
-        }
-
-        window.clearTimeout(pending.timeoutId);
-        pendingRequestRef.current.delete(parsed.Action);
-        pending.resolve(parsed);
+        socket.onmessage = handleSocketMessage;
       } catch {
-        // Ignore invalid socket payloads from the local service.
+        connectPromiseRef.current = null;
+        reject(
+          new Error("No se pudo inicializar el servicio local de impresion"),
+        );
       }
-    };
+    });
+
+    return connectPromiseRef.current;
   }
 
   function ensureSocket() {
@@ -117,102 +169,31 @@ export function useLocalPrintSocket() {
       return Promise.resolve(current);
     }
 
-    if (current?.readyState === WebSocket.CONNECTING) {
-      return new Promise<WebSocket>((resolve, reject) => {
-        const startedAt = Date.now();
-        const intervalId = window.setInterval(() => {
-          const socket = socketRef.current;
-          if (socket?.readyState === WebSocket.OPEN) {
-            window.clearInterval(intervalId);
-            resolve(socket);
-            return;
-          }
-
-          if (!socket || socket.readyState === WebSocket.CLOSED) {
-            window.clearInterval(intervalId);
-            reject(
-              new Error(
-                "No se pudo conectar con el servicio local de impresion",
-              ),
-            );
-            return;
-          }
-
-          if (Date.now() - startedAt > 5000) {
-            window.clearInterval(intervalId);
-            reject(
-              new Error(
-                "Tiempo agotado al conectar con el servicio local de impresion",
-              ),
-            );
-          }
-        }, 120);
-      });
+    if (current?.readyState === WebSocket.CONNECTING && connectPromiseRef.current) {
+      return connectPromiseRef.current;
     }
 
-    return new Promise<WebSocket>((resolve, reject) => {
-      try {
-        const socket = new WebSocket(LOCAL_PRINT_WS_URL);
-        socketRef.current = socket;
-        attachSocketListeners(socket);
-
-        socket.onopen = () => {
-          setIsConnected(true);
-          resolve(socket);
-        };
-
-        socket.onclose = () => {
-          setIsConnected(false);
-          socketRef.current = null;
-          rejectPendingRequests(
-            new Error("La conexion con la impresora local se cerro"),
-          );
-        };
-
-        socket.onerror = () => {
-          setIsConnected(false);
-          reject(
-            new Error(
-              "No se pudo conectar con el servicio local de impresion",
-            ),
-          );
-        };
-
-        socket.onmessage = (event) => {
-          try {
-            const parsed = JSON.parse(event.data) as SocketEnvelope;
-
-            if (
-              parsed.Action === "GetPrinters" &&
-              parsed.StatusCode === 200 &&
-              Array.isArray(parsed.ResponseModel)
-            ) {
-              setPrinters(
-                parsed.ResponseModel.filter((value): value is string =>
-                  typeof value === "string",
-                ),
-              );
-            }
-
-            const pending = pendingRequestRef.current.get(parsed.Action);
-            if (!pending) {
-              return;
-            }
-
-            window.clearTimeout(pending.timeoutId);
-            pendingRequestRef.current.delete(parsed.Action);
-            pending.resolve(parsed);
-          } catch {
-            // Ignore invalid socket payloads from the local service.
-          }
-        };
-      } catch {
-        reject(
-          new Error("No se pudo inicializar el servicio local de impresion"),
-        );
-      }
-    });
+    return connect();
   }
+
+  /* eslint-disable react-hooks/exhaustive-deps */
+  useEffect(() => {
+    void connect().catch(() => {
+      // The POS can still fall back to browser printing if the local bridge
+      // is unavailable during startup.
+    });
+
+    return () => {
+      shouldReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
+    };
+  }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   async function sendRequest(action: SocketAction, responseModel: unknown) {
     const socket = await ensureSocket();
