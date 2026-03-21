@@ -70,7 +70,7 @@ export function buildPosTicketHtml(
         * { box-sizing: border-box; }
         body {
           margin: 0;
-          padding: 8px;
+          padding: 0;
           font-family: Arial, Helvetica, sans-serif;
           background: #fff;
           color: #111827;
@@ -78,31 +78,32 @@ export function buildPosTicketHtml(
         .ticket {
           width: 78mm;
           margin: 0 auto;
+          padding: 4px 6px 6px;
         }
         .center { text-align: center; }
         .muted { color: #4b5563; }
         .divider {
           border-top: 1px dashed #9ca3af;
-          margin: 8px 0;
+          margin: 6px 0;
         }
         h1 {
-          margin: 0 0 4px;
-          font-size: 16px;
+          margin: 0 0 3px;
+          font-size: 17px;
           letter-spacing: 0.04em;
           text-transform: uppercase;
         }
         p {
-          margin: 3px 0;
-          font-size: 12px;
-          line-height: 1.35;
+          margin: 2px 0;
+          font-size: 13px;
+          line-height: 1.3;
         }
         table {
           width: 100%;
           border-collapse: collapse;
         }
         td {
-          padding: 3px 0;
-          font-size: 12px;
+          padding: 2px 0;
+          font-size: 13px;
           vertical-align: top;
         }
         .right {
@@ -115,15 +116,15 @@ export function buildPosTicketHtml(
         }
         .item-meta {
           color: #6b7280;
-          font-size: 11px;
+          font-size: 12px;
         }
         .summary td {
           padding: 2px 0;
         }
         .summary tr:last-child td {
           font-weight: 700;
-          font-size: 14px;
-          padding-top: 4px;
+          font-size: 15px;
+          padding-top: 3px;
         }
         .print-actions {
           display: flex;
