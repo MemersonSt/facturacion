@@ -14,7 +14,7 @@ const PAGE_WIDTH = 78 * MM_TO_PT;
 const PAGE_PADDING_X = 6;
 const PAGE_PADDING_Y = 4;
 const CONTENT_WIDTH = PAGE_WIDTH - PAGE_PADDING_X * 2;
-const AMOUNT_COLUMN_WIDTH = 56;
+const AMOUNT_COLUMN_WIDTH = 50;
 const TEXT_COLUMN_WIDTH = CONTENT_WIDTH - AMOUNT_COLUMN_WIDTH - 6;
 
 type TextOp = {
@@ -156,43 +156,43 @@ function buildLayoutOps(
 
   addWrappedText(data.businessName.toUpperCase(), {
     font: boldFont,
-    size: 12.5,
+    size: 11,
     align: "center",
   });
   addWrappedText(data.documentLabel, {
-    size: 10,
+    size: 8.5,
     align: "center",
     color: rgb(0.35, 0.35, 0.35),
   });
 
   if (data.documentNumber) {
     addWrappedText(`Documento: ${data.documentNumber}`, {
-      size: 10,
+      size: 8.5,
       align: "center",
     });
   }
 
   addWrappedText(`Venta #${data.saleNumber}`, {
-    size: 10.5,
+    size: 9,
     align: "center",
   });
   addDivider();
 
-  addWrappedText(`Fecha: ${data.createdAt}`, { size: 9.5 });
-  addWrappedText(`Operador: ${data.operatorName}`, { size: 9.5 });
-  addWrappedText(`Cliente: ${data.customerName}`, { size: 9.5 });
-  addWrappedText(`Pago: ${data.paymentMethodLabel}`, { size: 9.5 });
+  addWrappedText(`Fecha: ${data.createdAt}`, { size: 8.5 });
+  addWrappedText(`Operador: ${data.operatorName}`, { size: 8.5 });
+  addWrappedText(`Cliente: ${data.customerName}`, { size: 8.5 });
+  addWrappedText(`Pago: ${data.paymentMethodLabel}`, { size: 8.5 });
   addDivider();
 
   for (const item of data.lines) {
     addWrappedText(item.name, {
       font: boldFont,
-      size: 10.5,
+      size: 9.5,
       maxWidth: CONTENT_WIDTH,
     });
 
     addWrappedText(`${item.quantity.toFixed(2)} x $${formatMoney(item.unitPrice)}`, {
-      size: 9.5,
+      size: 8.5,
       x: PAGE_PADDING_X,
       maxWidth: TEXT_COLUMN_WIDTH,
     });
@@ -200,7 +200,7 @@ function buildLayoutOps(
       kind: "text",
       text: `$${formatMoney(item.total)}`,
       font: boldFont,
-      size: 9.5,
+      size: 8.5,
       align: "right",
       x: PAGE_WIDTH - PAGE_PADDING_X,
     });
@@ -208,7 +208,7 @@ function buildLayoutOps(
 
   addDivider();
   addWrappedText("Subtotal", {
-    size: 10,
+    size: 8.5,
     x: PAGE_PADDING_X,
     maxWidth: TEXT_COLUMN_WIDTH,
   });
@@ -216,13 +216,13 @@ function buildLayoutOps(
     kind: "text",
     text: `$${formatMoney(data.subtotal)}`,
     font: regularFont,
-    size: 10,
+    size: 8.5,
     align: "right",
     x: PAGE_WIDTH - PAGE_PADDING_X,
   });
 
   addWrappedText("IVA", {
-    size: 10,
+    size: 8.5,
     x: PAGE_PADDING_X,
     maxWidth: TEXT_COLUMN_WIDTH,
   });
@@ -230,14 +230,14 @@ function buildLayoutOps(
     kind: "text",
     text: `$${formatMoney(data.taxTotal)}`,
     font: regularFont,
-    size: 10,
+    size: 8.5,
     align: "right",
     x: PAGE_WIDTH - PAGE_PADDING_X,
   });
 
   addWrappedText("TOTAL", {
     font: boldFont,
-    size: 11.5,
+    size: 10,
     x: PAGE_PADDING_X,
     maxWidth: TEXT_COLUMN_WIDTH,
   });
@@ -245,7 +245,7 @@ function buildLayoutOps(
     kind: "text",
     text: `$${formatMoney(data.total)}`,
     font: boldFont,
-    size: 11.5,
+    size: 10,
     align: "right",
     x: PAGE_WIDTH - PAGE_PADDING_X,
   });
@@ -253,7 +253,7 @@ function buildLayoutOps(
   addDivider();
   addWrappedText("Gracias por su compra", {
     font: boldFont,
-    size: 10,
+    size: 8.5,
     align: "center",
   });
 
@@ -277,8 +277,8 @@ function estimatePageHeight(ops: LayoutOp[]) {
 
 export async function buildPosTicketPdfBase64(data: PosTicketData) {
   const pdf = await PDFDocument.create();
-  const regularFont = await pdf.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const regularFont = await pdf.embedFont(StandardFonts.Courier);
+  const boldFont = await pdf.embedFont(StandardFonts.CourierBold);
 
   const ops = buildLayoutOps(data, regularFont, boldFont);
   const pageHeight = estimatePageHeight(ops);
