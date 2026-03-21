@@ -104,7 +104,7 @@ export default function LoginPage() {
               }}
             >
               <Image
-                src="/logo-original.jpg"
+                src="/logo/logo-intuit.jpg"
                 alt="Logo de ARGSOFT"
                 fill
                 className="object-cover"
