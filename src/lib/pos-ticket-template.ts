@@ -1,11 +1,11 @@
-type PosTicketLine = {
+export type PosTicketLine = {
   quantity: number;
   name: string;
   unitPrice: number;
   total: number;
 };
 
-type PosTicketData = {
+export type PosTicketData = {
   businessName: string;
   operatorName: string;
   saleNumber: string;

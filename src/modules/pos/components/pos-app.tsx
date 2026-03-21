@@ -48,9 +48,14 @@ import {
 } from "react";
 import { alpha, useTheme } from "@mui/material/styles";
 
-import { buildPosTicketHtml } from "@/lib/pos-ticket-template";
+import {
+  buildPosTicketHtml,
+  type PosTicketData,
+} from "@/lib/pos-ticket-template";
+import { buildPosTicketPdfBase64 } from "@/lib/pos-ticket-pdf";
 import { PosCashSessionDialog } from "@/modules/pos/components/pos-cash-session-dialog";
 import { PosHeldSalesDialog } from "@/modules/pos/components/pos-held-sales-dialog";
+import { useLocalPrintSocket } from "@/modules/pos/hooks/use-local-print-socket";
 import { fetchJson } from "@/shared/dashboard/api";
 import {
   IDENTIFICATION_TYPES,
@@ -255,9 +260,20 @@ export function PosApp({ initialSession }: PosAppProps) {
   const [openingNotes, setOpeningNotes] = useState("");
   const [closingAmount, setClosingAmount] = useState("");
   const [closingNotes, setClosingNotes] = useState("");
-  const [lastTicketHtml, setLastTicketHtml] = useState<string | null>(null);
+  const [lastTicketData, setLastTicketData] = useState<PosTicketData | null>(
+    null,
+  );
+  const [loadingPrinters, setLoadingPrinters] = useState(false);
   const [barcodeQuery, setBarcodeQuery] = useState("");
   const [entryQuantity, setEntryQuantity] = useState("1");
+  const {
+    isConnected: isPrintServiceConnected,
+    printers: localPrinters,
+    selectedPrinter,
+    setSelectedPrinter,
+    loadPrinters,
+    printBase64Document,
+  } = useLocalPrintSocket();
   const [manualProduct, setManualProduct] = useState<Product | null>(null);
 
   const products = bootstrap?.products ?? EMPTY_PRODUCTS;
@@ -597,6 +613,42 @@ export function PosApp({ initialSession }: PosAppProps) {
     }
   }
 
+  async function refreshLocalPrinters(showFeedback = true) {
+    setLoadingPrinters(true);
+
+    try {
+      const printers = await loadPrinters();
+      if (printers.length === 0) {
+        setMessage({
+          tone: "info",
+          text: "El servicio local no devolvio impresoras disponibles",
+        });
+        return;
+      }
+
+      if (!selectedPrinter || !printers.includes(selectedPrinter)) {
+        setSelectedPrinter(printers[0]);
+      }
+
+      if (showFeedback) {
+        setMessage({
+          tone: "success",
+          text: `Impresoras detectadas: ${printers.length}`,
+        });
+      }
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "No se pudo conectar con la impresora local",
+      });
+    } finally {
+      setLoadingPrinters(false);
+    }
+  }
+
   useEffect(() => {
     void loadBootstrap();
   }, []);
@@ -709,8 +761,8 @@ export function PosApp({ initialSession }: PosAppProps) {
         break;
       case "F9":
         event.preventDefault();
-        if (lastTicketHtml) {
-          printTicket(lastTicketHtml);
+        if (lastTicketData) {
+          void printTicket(lastTicketData);
         }
         break;
       case "F10":
@@ -1318,7 +1370,7 @@ export function PosApp({ initialSession }: PosAppProps) {
         },
       );
 
-      const ticketHtml = buildPosTicketHtml({
+      const ticketData: PosTicketData = {
         businessName: bootstrap.business.name,
         operatorName: bootstrap.operator.name,
         saleNumber: result.saleNumber,
@@ -1345,10 +1397,10 @@ export function PosApp({ initialSession }: PosAppProps) {
           unitPrice: line.precioUnitario,
           total: line.total,
         })),
-      });
+      };
 
-      setLastTicketHtml(ticketHtml);
-      printTicket(ticketHtml);
+      setLastTicketData(ticketData);
+      void printTicket(ticketData);
 
       if (activeHeldSaleId) {
         await fetchJson<{ id: string }>(
@@ -1388,7 +1440,7 @@ export function PosApp({ initialSession }: PosAppProps) {
     window.location.href = "/login";
   }
 
-  function printTicket(html: string) {
+  function printTicketInBrowser(html: string) {
     const printWindow = window.open(
       "",
       "_blank",
@@ -1405,6 +1457,33 @@ export function PosApp({ initialSession }: PosAppProps) {
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
+  }
+
+  async function printTicket(ticketData: PosTicketData) {
+    const ticketHtml = buildPosTicketHtml(ticketData);
+
+    if (!selectedPrinter) {
+      printTicketInBrowser(ticketHtml);
+      return;
+    }
+
+    try {
+      const pdfBase64 = await buildPosTicketPdfBase64(ticketData);
+      await printBase64Document(selectedPrinter, pdfBase64);
+      setMessage({
+        tone: "success",
+        text: `Ticket enviado a ${selectedPrinter}`,
+      });
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text:
+          error instanceof Error
+            ? `${error.message}. Se abrira la impresion del navegador como respaldo.`
+            : "No se pudo imprimir por la impresora local. Se abrira el navegador como respaldo.",
+      });
+      printTicketInBrowser(ticketHtml);
+    }
   }
 
   function handleSnackbarClose(
@@ -1628,8 +1707,8 @@ export function PosApp({ initialSession }: PosAppProps) {
                   variant="outlined"
                   sx={{ borderColor: headerOutline }}
                   startIcon={<Printer className="h-4 w-4" />}
-                  onClick={() => lastTicketHtml && printTicket(lastTicketHtml)}
-                  disabled={!lastTicketHtml}
+                  onClick={() => lastTicketData && void printTicket(lastTicketData)}
+                  disabled={!lastTicketData}
                 >
                   Reimprimir · F9
                 </Button>
@@ -1657,6 +1736,56 @@ export function PosApp({ initialSession }: PosAppProps) {
           transformOrigin={{ horizontal: "right", vertical: "top" }}
           anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
         >
+          <MenuItem disabled>
+            {selectedPrinter
+              ? `Impresora: ${selectedPrinter}`
+              : "Impresora local no seleccionada"}
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              void refreshLocalPrinters();
+            }}
+            disabled={loadingPrinters}
+          >
+            {loadingPrinters
+              ? "Buscando impresoras..."
+              : isPrintServiceConnected
+                ? "Actualizar impresoras"
+                : "Conectar impresora local"}
+          </MenuItem>
+          {localPrinters.length === 0 ? (
+            <MenuItem disabled>Sin impresoras detectadas</MenuItem>
+          ) : null}
+          {localPrinters.map((printerName) => (
+            <MenuItem
+              key={printerName}
+              selected={printerName === selectedPrinter}
+              onClick={() => {
+                setSelectedPrinter(printerName);
+                closeToolbarMenu();
+                setMessage({
+                  tone: "success",
+                  text: `Impresora seleccionada: ${printerName}`,
+                });
+              }}
+            >
+              {printerName}
+            </MenuItem>
+          ))}
+          {selectedPrinter ? (
+            <MenuItem
+              onClick={() => {
+                setSelectedPrinter(null);
+                closeToolbarMenu();
+                setMessage({
+                  tone: "info",
+                  text: "Impresion local desactivada. Se usara el navegador.",
+                });
+              }}
+            >
+              Usar navegador para imprimir
+            </MenuItem>
+          ) : null}
           <MenuItem
             onClick={() => {
               closeToolbarMenu();
