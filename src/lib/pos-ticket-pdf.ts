@@ -6,8 +6,8 @@ import type { PosTicketData } from "@/lib/pos-ticket-template";
 
 const MM_TO_PT = 2.83465;
 const PAGE_WIDTH = 78 * MM_TO_PT;
-const PAGE_PADDING = 12;
-const LINE_HEIGHT = 11;
+const PAGE_PADDING = 6;
+const LINE_HEIGHT = 13;
 const CONTENT_WIDTH = PAGE_WIDTH - PAGE_PADDING * 2;
 
 function formatMoney(value: number) {
@@ -74,11 +74,11 @@ function buildReceiptLines(data: PosTicketData) {
   pushDivider(lines);
 
   for (const line of data.lines) {
-    for (const wrapped of wrapText(line.name, 30)) {
+    for (const wrapped of wrapText(line.name, 24)) {
       lines.push(wrapped);
     }
     lines.push(
-      `${line.quantity.toFixed(2)} x ${formatMoney(line.unitPrice)}`.padEnd(22) +
+      `${line.quantity.toFixed(2)} x ${formatMoney(line.unitPrice)}`.padEnd(20) +
         formatMoney(line.total).padStart(10),
     );
   }
@@ -96,21 +96,21 @@ function buildReceiptLines(data: PosTicketData) {
 export async function buildPosTicketPdfBase64(data: PosTicketData) {
   const receiptLines = buildReceiptLines(data);
   const pageHeight =
-    PAGE_PADDING * 2 + receiptLines.length * LINE_HEIGHT + 10;
+    PAGE_PADDING * 2 + receiptLines.length * LINE_HEIGHT + 2;
 
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([PAGE_WIDTH, pageHeight]);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  let cursorY = pageHeight - PAGE_PADDING - 8;
+  let cursorY = pageHeight - PAGE_PADDING - 2;
 
   receiptLines.forEach((line, index) => {
     const isHeader = index === 0 || line === "Gracias por su compra";
     page.drawText(line, {
       x: PAGE_PADDING,
       y: cursorY,
-      size: isHeader ? 9 : 8,
+      size: isHeader ? 11 : 10,
       font: isHeader ? boldFont : font,
       maxWidth: CONTENT_WIDTH,
     });

@@ -63,10 +63,14 @@ export function buildPosTicketHtml(
         :root {
           color-scheme: light;
         }
+        @page {
+          size: 78mm auto;
+          margin: 0;
+        }
         * { box-sizing: border-box; }
         body {
           margin: 0;
-          padding: 16px;
+          padding: 8px;
           font-family: Arial, Helvetica, sans-serif;
           background: #fff;
           color: #111827;
@@ -79,47 +83,47 @@ export function buildPosTicketHtml(
         .muted { color: #4b5563; }
         .divider {
           border-top: 1px dashed #9ca3af;
-          margin: 12px 0;
+          margin: 8px 0;
         }
         h1 {
-          margin: 0 0 6px;
-          font-size: 15px;
-          letter-spacing: 0.08em;
+          margin: 0 0 4px;
+          font-size: 16px;
+          letter-spacing: 0.04em;
           text-transform: uppercase;
         }
         p {
-          margin: 4px 0;
-          font-size: 11px;
-          line-height: 1.45;
+          margin: 3px 0;
+          font-size: 12px;
+          line-height: 1.35;
         }
         table {
           width: 100%;
           border-collapse: collapse;
         }
         td {
-          padding: 4px 0;
-          font-size: 11px;
+          padding: 3px 0;
+          font-size: 12px;
           vertical-align: top;
         }
         .right {
           text-align: right;
           white-space: nowrap;
-          padding-left: 10px;
+          padding-left: 8px;
         }
         .item-name {
           font-weight: 600;
         }
         .item-meta {
           color: #6b7280;
-          font-size: 10px;
+          font-size: 11px;
         }
         .summary td {
-          padding: 3px 0;
+          padding: 2px 0;
         }
         .summary tr:last-child td {
           font-weight: 700;
-          font-size: 13px;
-          padding-top: 6px;
+          font-size: 14px;
+          padding-top: 4px;
         }
         .print-actions {
           display: flex;
@@ -136,7 +140,7 @@ export function buildPosTicketHtml(
           cursor: pointer;
         }
         @media print {
-          body { padding: 0; }
+          html, body { margin: 0; padding: 0; }
           .print-actions { display: none; }
         }
       </style>
