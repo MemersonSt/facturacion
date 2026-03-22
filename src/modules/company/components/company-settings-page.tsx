@@ -60,6 +60,7 @@ type BusinessSettingsResponse = {
   }>;
   posSettings: {
     trackInventoryOnSale: boolean;
+    useButcheryScaleBarcodeWeight: boolean;
   };
 };
 
@@ -82,6 +83,7 @@ type FormState = {
   invoiceEmissionPointCode: string;
   invoiceNextSequence: number;
   trackInventoryOnSale: boolean;
+  useButcheryScaleBarcodeWeight: boolean;
 };
 
 type SnackbarState = {
@@ -108,6 +110,7 @@ const DEFAULT_FORM: FormState = {
   invoiceEmissionPointCode: "001",
   invoiceNextSequence: 1,
   trackInventoryOnSale: true,
+  useButcheryScaleBarcodeWeight: false,
 };
 
 const PROFILE_OPTIONS = [
@@ -152,6 +155,8 @@ function toFormState(data: BusinessSettingsResponse): FormState {
       defaultInvoiceSeries?.emissionPointCode ?? "001",
     invoiceNextSequence: defaultInvoiceSeries?.nextSequence ?? 1,
     trackInventoryOnSale: data.posSettings?.trackInventoryOnSale ?? true,
+    useButcheryScaleBarcodeWeight:
+      data.posSettings?.useButcheryScaleBarcodeWeight ?? false,
   };
 }
 
@@ -390,6 +395,27 @@ export function CompanySettingsPage({ canEdit }: CompanySettingsPageProps) {
                 }
                 label="Controlar inventario al vender"
               />
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={form.useButcheryScaleBarcodeWeight}
+                    onChange={(e) =>
+                      updateField(
+                        "useButcheryScaleBarcodeWeight",
+                        e.target.checked,
+                      )
+                    }
+                    disabled={!canEdit}
+                  />
+                }
+                label="Carniceria: tomar peso desde codigo de balanza"
+              />
+
+              <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
+                Si el codigo de balanza trae peso embebido, el POS usara ese
+                valor como cantidad automaticamente al escanearlo.
+              </Typography>
             </Stack>
           </Paper>
 

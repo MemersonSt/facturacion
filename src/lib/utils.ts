@@ -50,7 +50,7 @@ function isScaleBarcodeCandidate(value: string) {
 
 function extractScaleBarcodeFamilyPrefix(value: string) {
   const normalized = normalizeLookupValue(value);
-  if (!normalized.startsWith("2") || !/^\d{13,14}$/.test(normalized)) {
+  if (!normalized.startsWith("2") || !/^\d{7,14}$/.test(normalized)) {
     return null;
   }
 
@@ -88,6 +88,41 @@ export function matchesScaleBarcodePrefix(
       barcodeFamilyPrefix &&
       queryFamilyPrefix === barcodeFamilyPrefix,
   );
+}
+
+export function extractScaleBarcodeWeight(
+  query: string,
+  barcodeValue: string | null | undefined,
+  options?: {
+    familyPrefixLength?: number;
+    embeddedDigits?: number;
+    decimals?: number;
+  },
+) {
+  if (!matchesScaleBarcodePrefix(query, barcodeValue)) {
+    return null;
+  }
+
+  const normalizedQuery = normalizeLookupValue(query);
+  const familyPrefixLength = options?.familyPrefixLength ?? 7;
+  const embeddedDigits = options?.embeddedDigits ?? 5;
+  const decimals = options?.decimals ?? 2;
+
+  if (!isScaleBarcodeCandidate(normalizedQuery)) {
+    return null;
+  }
+
+  const payloadStart = familyPrefixLength;
+  const payloadEnd = Math.max(normalizedQuery.length - 1, payloadStart);
+  const payload = normalizedQuery.slice(payloadStart, payloadEnd);
+  const valueDigits = payload.slice(0, embeddedDigits);
+
+  if (!/^\d+$/.test(valueDigits) || valueDigits.length !== embeddedDigits) {
+    return null;
+  }
+
+  const weight = Number(valueDigits) / 10 ** decimals;
+  return Number.isFinite(weight) && weight > 0 ? weight : null;
 }
 
 export function findBestScaleBarcodeMatch<T extends { codigoBarras?: string | null }>(

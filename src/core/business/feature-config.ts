@@ -3,12 +3,16 @@ import { z } from "zod";
 
 export const DEFAULT_POS_FEATURE_CONFIG = {
   trackInventoryOnSale: true,
+  useButcheryScaleBarcodeWeight: false,
 } as const;
 
 const posFeatureConfigSchema = z.object({
   trackInventoryOnSale: z
     .boolean()
     .default(DEFAULT_POS_FEATURE_CONFIG.trackInventoryOnSale),
+  useButcheryScaleBarcodeWeight: z
+    .boolean()
+    .default(DEFAULT_POS_FEATURE_CONFIG.useButcheryScaleBarcodeWeight),
 });
 
 export type PosFeatureConfig = z.infer<typeof posFeatureConfigSchema>;
@@ -32,5 +36,6 @@ export function serializePosFeatureConfig(
 ): Prisma.InputJsonValue {
   return {
     trackInventoryOnSale: config.trackInventoryOnSale,
+    useButcheryScaleBarcodeWeight: config.useButcheryScaleBarcodeWeight,
   } satisfies Prisma.InputJsonObject;
 }

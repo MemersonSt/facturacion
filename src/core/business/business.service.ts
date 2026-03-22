@@ -78,6 +78,7 @@ export type BusinessContext = Prisma.BusinessGetPayload<{
   enabledFeatures: BusinessFeatureKey[];
   posSettings: {
     trackInventoryOnSale: boolean;
+    useButcheryScaleBarcodeWeight: boolean;
   };
 };
 
@@ -400,6 +401,7 @@ export async function updateBusinessSettings(
     update: {
       config: serializePosFeatureConfig({
         trackInventoryOnSale: input.trackInventoryOnSale,
+        useButcheryScaleBarcodeWeight: input.useButcheryScaleBarcodeWeight,
       }),
     },
     create: {
@@ -408,6 +410,7 @@ export async function updateBusinessSettings(
       enabled: DEFAULT_FEATURE_STATE.POS,
       config: serializePosFeatureConfig({
         trackInventoryOnSale: input.trackInventoryOnSale,
+        useButcheryScaleBarcodeWeight: input.useButcheryScaleBarcodeWeight,
       }),
     },
   });

@@ -60,7 +60,11 @@ import {
   type PosTicketData,
 } from "@/lib/pos-ticket-template";
 import { createLogger, startTimer, timerDurationMs } from "@/lib/logger";
-import { findBestScaleBarcodeMatch, matchesScaleBarcodePrefix } from "@/lib/utils";
+import {
+  extractScaleBarcodeWeight,
+  findBestScaleBarcodeMatch,
+  matchesScaleBarcodePrefix,
+} from "@/lib/utils";
 import { PosCashSessionDialog } from "@/modules/pos/components/pos-cash-session-dialog";
 import { PosHeldSalesDialog } from "@/modules/pos/components/pos-held-sales-dialog";
 import { useLocalPrintSocket } from "@/modules/pos/hooks/use-local-print-socket";
@@ -136,6 +140,7 @@ export type PosBootstrap = {
   };
   billingEnabled: boolean;
   inventoryTrackingEnabled: boolean;
+  useButcheryScaleBarcodeWeight: boolean;
   defaultDocumentType: PosDocumentType;
   defaultIssuerId: string;
   cashSession: PosCashSession | null;
@@ -552,6 +557,8 @@ export function PosApp({
     [paymentLines],
   );
   const inventoryTrackingEnabled = bootstrap?.inventoryTrackingEnabled ?? true;
+  const useButcheryScaleBarcodeWeight =
+    bootstrap?.useButcheryScaleBarcodeWeight ?? false;
 
   const dataGridColumns = useMemo<GridColDef<LinePreviewRow>[]>(
     () => [
@@ -1350,7 +1357,11 @@ export function PosApp({
 
   function handleAddByCode() {
     const product = resolveProductByCode(barcodeQuery);
-    const quantity = parseDecimalInput(entryQuantity || "1", 1);
+    const embeddedWeight =
+      useButcheryScaleBarcodeWeight && product
+        ? extractScaleBarcodeWeight(barcodeQuery, product.codigoBarras)
+        : null;
+    const quantity = embeddedWeight ?? parseDecimalInput(entryQuantity || "1", 1);
 
     if (!product) {
       setMessage({
@@ -1366,6 +1377,16 @@ export function PosApp({
     }
 
     addProduct(product, quantity);
+    if (embeddedWeight) {
+      setMessage({
+        tone: "success",
+        text: `${product.nombre} agregado con peso ${formatDecimalInput(
+          embeddedWeight,
+          3,
+          true,
+        )}`,
+      });
+    }
     setBarcodeQuery("");
     setEntryQuantity("1");
     focusBarcodeField();
