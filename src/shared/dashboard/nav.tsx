@@ -7,6 +7,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { alpha, useTheme } from "@mui/material/styles";
 import {
+  BarChart3,
   Boxes,
   ClipboardList,
   FileText,
@@ -56,6 +57,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Facturar Venta",
     hint: "Registro de ventas",
     icon: ShoppingCart,
+  },
+  {
+    href: "/reports",
+    label: "Reportes",
+    hint: "Analisis comercial",
+    icon: BarChart3,
   },
   {
     href: "/quotes",
