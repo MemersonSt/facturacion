@@ -103,6 +103,16 @@ function twoColumns(left: string, right: string) {
   return padRight(leftTrimmed, LEFT_WIDTH) + padLeft(r, MONEY_WIDTH);
 }
 
+function labelValueLines(label: string, value: string, width = TICKET_WIDTH) {
+  const prefix = `${label}: `;
+  const available = Math.max(8, width - prefix.length);
+  const wrapped = wrapText(value, available);
+
+  return wrapped.map((line, index) =>
+    index === 0 ? `${prefix}${line}` : `${repeat(" ", prefix.length)}${line}`,
+  );
+}
+
 export type EscPosBuildResult = {
   rawText: string;
   bytes: Uint8Array;
@@ -216,16 +226,13 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
   esc.boldOff();
 
   if (data.documentLabel) {
-    for (const line of wrapText(data.documentLabel, TICKET_WIDTH)) {
+    for (const line of wrapText(data.documentLabel, TICKET_WIDTH - 4)) {
       esc.line(centerText(line, TICKET_WIDTH));
     }
   }
 
   if (data.documentNumber) {
-    for (const line of wrapText(
-      `Documento: ${data.documentNumber}`,
-      TICKET_WIDTH,
-    )) {
+    for (const line of wrapText(data.documentNumber, TICKET_WIDTH - 4)) {
       esc.line(centerText(line, TICKET_WIDTH));
     }
   }
@@ -237,34 +244,26 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
   esc.alignLeft();
   esc.line(divider("="));
 
-  for (const line of wrapText(`Fecha: ${data.createdAt ?? ""}`, TICKET_WIDTH)) {
+  for (const line of labelValueLines("Fecha", data.createdAt ?? "")) {
     esc.line(line);
   }
 
-  for (const line of wrapText(
-    `Operador: ${data.operatorName ?? ""}`,
-    TICKET_WIDTH,
-  )) {
+  for (const line of labelValueLines("Operador", data.operatorName ?? "")) {
     esc.line(line);
   }
 
-  for (const line of wrapText(
-    `Cliente: ${data.customerName ?? ""}`,
-    TICKET_WIDTH,
-  )) {
+  for (const line of labelValueLines("Cliente", data.customerName ?? "")) {
     esc.line(line);
   }
 
-  for (const line of wrapText(
-    `Pago: ${data.paymentMethodLabel ?? ""}`,
-    TICKET_WIDTH,
-  )) {
+  for (const line of labelValueLines("Pago", data.paymentMethodLabel ?? "")) {
     esc.line(line);
   }
 
   esc.line(divider("="));
-  esc.line(twoColumns("DESCRIP", "P.TOTAL"));
-  esc.line(twoColumns("CANT  P.UNIT", ""));
+  esc.boldOn();
+  esc.line("DETALLE");
+  esc.boldOff();
   esc.line(divider("-"));
 
   for (const item of data.lines ?? []) {
@@ -276,12 +275,12 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
       esc.boldOff();
     }
 
-    esc.line(
-      twoColumns(
-        `${item.quantity.toFixed(2)}  ${formatMoney(item.unitPrice)}`,
-        formatMoney(item.total),
-      ),
-    );
+    for (const line of wrapText(
+      `${item.quantity.toFixed(2)} x ${formatMoney(item.unitPrice)} = ${formatMoney(item.total)}`,
+      TICKET_WIDTH - 2,
+    )) {
+      esc.line(` ${line}`);
+    }
   }
 
   esc.line(divider("-"));
