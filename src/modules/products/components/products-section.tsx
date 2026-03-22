@@ -15,6 +15,8 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
+import { matchesScaleBarcodePrefix } from "@/lib/utils";
+
 type ProductsSectionProps = {
   products: Product[];
   onOpenProductModal: () => void;
@@ -40,6 +42,7 @@ export function ProductsSection({
         product.nombre.toLowerCase().includes(q) ||
         (product.sku ?? "").toLowerCase().includes(q) ||
         (product.codigoBarras ?? "").toLowerCase().includes(q) ||
+        matchesScaleBarcodePrefix(q, product.codigoBarras) ||
         product.codigo.toLowerCase().includes(q) ||
         product.tipoProducto.toLowerCase().includes(q),
     );
@@ -62,7 +65,7 @@ export function ProductsSection({
       },
       {
         field: "codigoBarras",
-        headerName: "Cod. barras",
+        headerName: "Barra / prefijo",
         minWidth: 160,
         flex: 1,
         renderCell: (params) => (

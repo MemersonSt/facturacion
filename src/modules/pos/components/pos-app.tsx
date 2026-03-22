@@ -59,6 +59,7 @@ import {
   type PosTicketData,
 } from "@/lib/pos-ticket-template";
 import { createLogger, startTimer, timerDurationMs } from "@/lib/logger";
+import { findBestScaleBarcodeMatch, matchesScaleBarcodePrefix } from "@/lib/utils";
 import { PosCashSessionDialog } from "@/modules/pos/components/pos-cash-session-dialog";
 import { PosHeldSalesDialog } from "@/modules/pos/components/pos-held-sales-dialog";
 import { useLocalPrintSocket } from "@/modules/pos/hooks/use-local-print-socket";
@@ -1109,6 +1110,7 @@ export function PosApp({
       products.find(
         (product) => (product.codigoBarras ?? "").toLowerCase() === normalized,
       ) ??
+      findBestScaleBarcodeMatch(products, normalized) ??
       products.find(
         (product) => (product.sku ?? "").toLowerCase() === normalized,
       ) ??
@@ -2676,6 +2678,26 @@ export function PosApp({
                             options={products}
                             value={manualProduct}
                             onChange={(_, value) => setManualProduct(value)}
+                            filterOptions={(options, state) => {
+                              const normalized = state.inputValue.trim().toLowerCase();
+                              if (!normalized) {
+                                return options;
+                              }
+
+                              return options.filter(
+                                (option) =>
+                                  option.codigo.toLowerCase().includes(normalized) ||
+                                  (option.codigoBarras ?? "")
+                                    .toLowerCase()
+                                    .includes(normalized) ||
+                                  matchesScaleBarcodePrefix(
+                                    normalized,
+                                    option.codigoBarras,
+                                  ) ||
+                                  (option.sku ?? "").toLowerCase().includes(normalized) ||
+                                  option.nombre.toLowerCase().includes(normalized),
+                              );
+                            }}
                             getOptionLabel={(option) =>
                               `${option.codigo}${
                                 option.codigoBarras

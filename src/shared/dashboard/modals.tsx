@@ -129,7 +129,7 @@ export function ProductModal({ isOpen, newProduct, setNewProduct, saving, onClos
             <div>
               <TextField
                 id="modal-codigo-barras"
-                label="Codigo de barras (opcional)"
+                label="Codigo de barras o prefijo balanza"
                 value={newProduct.codigoBarras}
                 onChange={(e) =>
                   setNewProduct((prev) => ({
@@ -307,7 +307,7 @@ export function EditProductModal({ isOpen, editForm, setEditForm, saving, onClos
             <div>
               <TextField
                 id="edit-codigo-barras"
-                label="Codigo de barras (opcional)"
+                label="Codigo de barras o prefijo balanza"
                 value={editForm.codigoBarras}
                 onChange={(e) =>
                   setEditForm((prev) => ({

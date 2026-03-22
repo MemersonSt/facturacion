@@ -39,3 +39,76 @@ export function normalizeProductSku(value?: string | null) {
 export function resolveProductCode(sku: string | null | undefined, secuencial: bigint | number | string) {
   return normalizeProductSku(sku) ?? formatProductCode(secuencial);
 }
+
+function normalizeLookupValue(value?: string | null) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function isScaleBarcodeCandidate(value: string) {
+  return value.startsWith("2") && /^\d{7,14}$/.test(value);
+}
+
+function extractScaleBarcodeFamilyPrefix(value: string) {
+  const normalized = normalizeLookupValue(value);
+  if (!normalized.startsWith("2") || !/^\d{13,14}$/.test(normalized)) {
+    return null;
+  }
+
+  return normalized.slice(0, 7);
+}
+
+export function matchesScaleBarcodePrefix(
+  query: string,
+  barcodeValue: string | null | undefined,
+) {
+  const normalizedQuery = normalizeLookupValue(query);
+  const normalizedBarcode = normalizeLookupValue(barcodeValue);
+
+  if (!normalizedQuery || !normalizedBarcode) {
+    return false;
+  }
+
+  if (!isScaleBarcodeCandidate(normalizedQuery) || !/^\d+$/.test(normalizedBarcode)) {
+    return false;
+  }
+
+  if (
+    normalizedBarcode.length >= 4 &&
+    normalizedBarcode.length < normalizedQuery.length &&
+    normalizedQuery.startsWith(normalizedBarcode)
+  ) {
+    return true;
+  }
+
+  const queryFamilyPrefix = extractScaleBarcodeFamilyPrefix(normalizedQuery);
+  const barcodeFamilyPrefix = extractScaleBarcodeFamilyPrefix(normalizedBarcode);
+
+  return Boolean(
+    queryFamilyPrefix &&
+      barcodeFamilyPrefix &&
+      queryFamilyPrefix === barcodeFamilyPrefix,
+  );
+}
+
+export function findBestScaleBarcodeMatch<T extends { codigoBarras?: string | null }>(
+  items: readonly T[],
+  query: string,
+) {
+  let bestMatch: T | null = null;
+  let bestPrefixLength = -1;
+
+  for (const item of items) {
+    const barcodeValue = normalizeLookupValue(item.codigoBarras);
+    if (!matchesScaleBarcodePrefix(query, barcodeValue)) {
+      continue;
+    }
+
+    const matchWeight = barcodeValue.length >= 13 ? 7 : barcodeValue.length;
+    if (matchWeight > bestPrefixLength) {
+      bestMatch = item;
+      bestPrefixLength = matchWeight;
+    }
+  }
+
+  return bestMatch;
+}

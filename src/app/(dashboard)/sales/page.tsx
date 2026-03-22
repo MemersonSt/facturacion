@@ -24,6 +24,7 @@ import {
   type QuoteDetail,
   type Quote,
 } from "@/shared/dashboard/types";
+import { matchesScaleBarcodePrefix } from "@/lib/utils";
 
 type CheckoutResponse = {
   saleNumber: string;
@@ -148,6 +149,7 @@ export default function CheckoutPage() {
       (product) =>
         product.codigo.toLowerCase().includes(term) ||
         (product.codigoBarras ?? "").toLowerCase().includes(term) ||
+        matchesScaleBarcodePrefix(term, product.codigoBarras) ||
         (product.sku ?? "").toLowerCase().includes(term) ||
         product.nombre.toLowerCase().includes(term) ||
         product.id.toLowerCase().includes(term),
