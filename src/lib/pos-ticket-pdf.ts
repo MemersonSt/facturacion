@@ -2,13 +2,17 @@
 
 import type { PosTicketData } from "@/lib/pos-ticket-template";
 
-const TICKET_WIDTH = 42;
-const MONEY_WIDTH = 10;
-const LEFT_WIDTH = TICKET_WIDTH - MONEY_WIDTH;
-const DESC_WIDTH = 18;
-const QTY_WIDTH = 5;
+const TICKET_WIDTH = 48;
+
+// Columnas del detalle
+const DESC_WIDTH = 20;
+const QTY_WIDTH = 8;
 const UNIT_WIDTH = 9;
-const TOTAL_WIDTH = 10;
+const TOTAL_WIDTH = 11;
+
+// Totales
+const MONEY_WIDTH = 12;
+const LABEL_WIDTH = TICKET_WIDTH - MONEY_WIDTH;
 
 function formatMoney(value: number) {
   return value.toFixed(2);
@@ -87,70 +91,48 @@ function padLeft(text: string, width: number) {
   return repeat(" ", width - text.length) + text;
 }
 
+function centerText(text: string, width: number) {
+  if (text.length >= width) return text.slice(0, width);
+  const remaining = width - text.length;
+  const left = Math.floor(remaining / 2);
+  const right = remaining - left;
+  return repeat(" ", left) + text + repeat(" ", right);
+}
+
 function divider(char = "=") {
   return repeat(char, TICKET_WIDTH);
 }
 
-function twoColumns(left: string, right: string) {
-  const l = normalizePrintableText(left);
-  const r = normalizePrintableText(right);
+function dividerThin() {
+  return repeat("-", TICKET_WIDTH);
+}
 
-  const leftTrimmed = l.length > LEFT_WIDTH ? l.slice(0, LEFT_WIDTH) : l;
-  return padRight(leftTrimmed, LEFT_WIDTH) + padLeft(r, MONEY_WIDTH);
+function amountLine(label: string, value: string) {
+  return padRight(label, LABEL_WIDTH) + padLeft(value, MONEY_WIDTH);
 }
 
 function labelValueLines(label: string, value: string, width = TICKET_WIDTH) {
   const prefix = `${label}: `;
-  const available = Math.max(8, width - prefix.length);
-  const wrapped = wrapText(value, available);
+  const contentWidth = Math.max(8, width - prefix.length);
+  const wrapped = wrapText(value, contentWidth);
 
   return wrapped.map((line, index) =>
     index === 0 ? `${prefix}${line}` : `${repeat(" ", prefix.length)}${line}`,
   );
 }
 
-function itemHeaderLine() {
-  return (
-    padRight("DESCRIP", DESC_WIDTH) +
-    padLeft("CANT", QTY_WIDTH) +
-    padLeft("P.UNIT", UNIT_WIDTH) +
-    padLeft("P.TOTAL", TOTAL_WIDTH)
-  );
-}
-
-function itemColumnLines(
-  description: string,
-  quantity: number,
-  unitPrice: number,
-  total: number,
-) {
-  const wrappedDescription = wrapText(description, DESC_WIDTH);
-
-  return wrappedDescription.map((line, index) =>
-    padRight(line, DESC_WIDTH) +
-    padLeft(index === 0 ? quantity.toFixed(2) : "", QTY_WIDTH) +
-    padLeft(index === 0 ? `$${formatMoney(unitPrice)}` : "", UNIT_WIDTH) +
-    padLeft(index === 0 ? `$${formatMoney(total)}` : "", TOTAL_WIDTH),
-  );
-}
-
 function inferDocumentTitle(documentLabel: string, documentNumber: string | null) {
   const label = normalizePrintableText(documentLabel).trim();
-  const normalizedNumber = normalizePrintableText(documentNumber ?? "").trim();
+  const number = normalizePrintableText(documentNumber ?? "").trim();
 
   if (!label) {
-    return normalizedNumber ? "DOCUMENTO" : "TICKET";
+    return number ? "DOCUMENTO" : "TICKET";
   }
 
-  if (normalizedNumber && label.includes(normalizedNumber)) {
-    if (label.toUpperCase().includes("FACTURA")) {
-      return "FACTURA";
-    }
-
-    if (label.toUpperCase().includes("TICKET")) {
-      return "TICKET";
-    }
-
+  if (number && label.includes(number)) {
+    if (label.toUpperCase().includes("FACTURA")) return "FACTURA";
+    if (label.toUpperCase().includes("NOTA DE VENTA")) return "NOTA DE VENTA";
+    if (label.toUpperCase().includes("TICKET")) return "TICKET";
     return "DOCUMENTO";
   }
 
@@ -159,11 +141,41 @@ function inferDocumentTitle(documentLabel: string, documentNumber: string | null
 
 function paymentLines(paymentMethodLabel: string) {
   const lines = wrapText(paymentMethodLabel, TICKET_WIDTH - 2);
-
   return [
     "Forma de pago:",
     ...lines.map((line, index) => (index === 0 ? line : ` ${line}`)),
   ];
+}
+
+function itemHeaderLine1() {
+  return (
+    padRight("DESCRIP", DESC_WIDTH) +
+    padLeft("CANT", QTY_WIDTH) +
+    padLeft("P.UNIT", UNIT_WIDTH) +
+    padLeft("P.TOTAL", TOTAL_WIDTH)
+  );
+}
+
+function itemLines(
+  description: string,
+  quantity: number,
+  unitPrice: number,
+  total: number,
+) {
+  const descLines = wrapText(description, DESC_WIDTH);
+
+  return descLines.map((line, index) => {
+    const qty = index === 0 ? quantity.toFixed(2) : "";
+    const unit = index === 0 ? `$${formatMoney(unitPrice)}` : "";
+    const tot = index === 0 ? `$${formatMoney(total)}` : "";
+
+    return (
+      padRight(line, DESC_WIDTH) +
+      padLeft(qty, QTY_WIDTH) +
+      padLeft(unit, UNIT_WIDTH) +
+      padLeft(tot, TOTAL_WIDTH)
+    );
+  });
 }
 
 export type EscPosBuildResult = {
@@ -238,7 +250,7 @@ class EscPos {
   }
 
   feed(lines = 1) {
-    for (let index = 0; index < lines; index += 1) {
+    for (let i = 0; i < lines; i += 1) {
       this.write("\n");
     }
     return this;
@@ -269,48 +281,48 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
 
   esc.initialize();
   esc.codePagePc858();
+
+  // Prueba con Font A primero
   esc.fontA();
   esc.normalSize();
 
+  // Encabezado
   esc.alignCenter();
   esc.boldOn();
-  for (const line of wrapText(
-    (data.businessName ?? "").toUpperCase(),
-    TICKET_WIDTH,
-  )) {
-    esc.line(line);
+  for (const line of wrapText((data.businessName ?? "").toUpperCase(), TICKET_WIDTH)) {
+    esc.line(centerText(line, TICKET_WIDTH));
   }
   esc.boldOff();
 
   if (documentTitle) {
     esc.boldOn();
     for (const line of wrapText(documentTitle, TICKET_WIDTH)) {
-      esc.line(line);
+      esc.line(centerText(line, TICKET_WIDTH));
     }
     esc.boldOff();
   }
 
   if (data.documentNumber) {
     for (const line of wrapText(data.documentNumber, TICKET_WIDTH)) {
-      esc.line(line);
+      esc.line(centerText(line, TICKET_WIDTH));
     }
   }
 
   if (
     data.documentLabel &&
-    normalizePrintableText(data.documentLabel).trim() !== documentTitle
+    normalizePrintableText(data.documentLabel).trim().toUpperCase() !== documentTitle
   ) {
     for (const line of wrapText(data.documentLabel, TICKET_WIDTH)) {
-      esc.line(line);
+      esc.line(centerText(line, TICKET_WIDTH));
     }
   }
 
   if (data.saleNumber) {
-    esc.line(`Venta #${data.saleNumber}`);
+    esc.line(centerText(`Venta #${data.saleNumber}`, TICKET_WIDTH));
   }
 
   esc.alignLeft();
-  esc.line(divider("="));
+  esc.line(divider());
 
   for (const line of labelValueLines("Fecha", data.createdAt ?? "")) {
     esc.line(line);
@@ -324,17 +336,18 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
     esc.line(line);
   }
 
-  esc.line(divider("="));
+  esc.line(divider());
+
+  // Detalle
   esc.boldOn();
-  esc.line(itemHeaderLine());
+  esc.line(itemHeaderLine1());
   esc.boldOff();
-  esc.line(divider("-"));
+  esc.line(dividerThin());
 
   for (const item of data.lines ?? []) {
     const itemName = normalizePrintableText((item.name ?? "").toUpperCase());
 
-    esc.boldOn();
-    for (const line of itemColumnLines(
+    for (const line of itemLines(
       itemName,
       item.quantity,
       item.unitPrice,
@@ -342,23 +355,27 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
     )) {
       esc.line(line);
     }
-    esc.boldOff();
+
+    esc.line(dividerThin());
   }
 
-  esc.line(divider("-"));
-  esc.line(twoColumns("Subtotal", formatMoney(data.subtotal ?? 0)));
-  esc.line(twoColumns("Dcto", "0.00"));
-  esc.line(twoColumns("IVA", formatMoney(data.taxTotal ?? 0)));
+  // Totales
+  esc.line(amountLine("Subtotal", formatMoney(data.subtotal ?? 0)));
+  esc.line(amountLine("Dcto", "0.00"));
+  esc.line(amountLine("IVA", formatMoney(data.taxTotal ?? 0)));
 
   esc.boldOn();
-  esc.line(twoColumns("TOTAL", formatMoney(data.total ?? 0)));
+  esc.line(amountLine("TOTAL", formatMoney(data.total ?? 0)));
   esc.boldOff();
 
-  esc.line(divider("-"));
+  esc.line(divider());
+
   for (const line of paymentLines(data.paymentMethodLabel ?? "")) {
     esc.line(line);
   }
-  esc.line(divider("-"));
+
+  esc.line(divider());
+
   esc.alignCenter();
   esc.boldOn();
   esc.line("Gracias por su compra");
@@ -374,8 +391,8 @@ export function buildPosTicketEscPosBase64(data: PosTicketData): string {
   const ticket = buildPosTicketEscPos(data);
 
   let binary = "";
-  for (let index = 0; index < ticket.bytes.length; index += 1) {
-    binary += String.fromCharCode(ticket.bytes[index] ?? 0);
+  for (let i = 0; i < ticket.bytes.length; i += 1) {
+    binary += String.fromCharCode(ticket.bytes[i] ?? 0);
   }
 
   if (typeof window !== "undefined") {
