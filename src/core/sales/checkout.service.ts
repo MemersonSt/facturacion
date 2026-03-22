@@ -10,6 +10,10 @@ import { prisma } from "@/lib/prisma";
 
 const logger = createLogger("SalesCheckout");
 
+type CheckoutOptions = {
+  inventoryTrackingEnabled?: boolean;
+};
+
 export type CheckoutResult = {
   saleId: string;
   saleNumber: string;
@@ -29,7 +33,7 @@ export type CheckoutResult = {
   backgroundDocumentTask: PendingSaleDocumentAuthorization | null;
 };
 
-export async function checkout(rawInput: unknown) {
+export async function checkout(rawInput: unknown, options?: CheckoutOptions) {
   const startedAt = startTimer();
 
   try {
@@ -38,6 +42,7 @@ export async function checkout(rawInput: unknown) {
       async (tx) => {
         const saleContext = await createSaleInTransaction(tx, input, {
           startedAt,
+          inventoryTrackingEnabled: options?.inventoryTrackingEnabled,
         });
         const documentResult = await createDocumentForSaleInTransaction(
           tx,
@@ -58,6 +63,7 @@ export async function checkout(rawInput: unknown) {
       documentType: documentResult.document.type,
       documentStatus: documentResult.document.status,
       backgroundDocument: Boolean(documentResult.backgroundAuthorization),
+      inventoryTrackingEnabled: options?.inventoryTrackingEnabled ?? true,
       durationMs: timerDurationMs(startedAt),
     });
 

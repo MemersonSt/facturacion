@@ -133,6 +133,7 @@ export type PosBootstrap = {
     role: "ADMIN" | "SELLER";
   };
   billingEnabled: boolean;
+  inventoryTrackingEnabled: boolean;
   defaultDocumentType: PosDocumentType;
   defaultIssuerId: string;
   cashSession: PosCashSession | null;
@@ -432,6 +433,7 @@ export function PosApp({
         .filter((line) => line.total > 0),
     [paymentLines],
   );
+  const inventoryTrackingEnabled = bootstrap?.inventoryTrackingEnabled ?? true;
 
   const dataGridColumns = useMemo<GridColDef<LinePreviewRow>[]>(
     () => [
@@ -480,7 +482,9 @@ export function PosApp({
               }}
             >
               {params.row.product.tipoProducto === "BIEN"
-                ? `Stock ${params.row.product.stock.toFixed(2)}`
+                ? inventoryTrackingEnabled
+                  ? `Stock ${params.row.product.stock.toFixed(2)}`
+                  : "Sin control de stock"
                 : "Servicio"}
             </Typography>
           </Stack>
@@ -628,7 +632,7 @@ export function PosApp({
         ),
       },
     ],
-    [],
+    [inventoryTrackingEnabled],
   );
 
   function patchBootstrap(updater: (current: PosBootstrap) => PosBootstrap) {
@@ -721,7 +725,7 @@ export function PosApp({
       return {
         ...current,
         products:
-          soldQtyByProduct.size === 0
+          !current.inventoryTrackingEnabled || soldQtyByProduct.size === 0
             ? current.products
             : current.products.map((product) => {
                 const soldQty = soldQtyByProduct.get(product.id);
@@ -1121,7 +1125,11 @@ export function PosApp({
   }
 
   function addProduct(product: Product, quantity = 1) {
-    if (product.tipoProducto === "BIEN" && product.stock <= 0) {
+    if (
+      inventoryTrackingEnabled &&
+      product.tipoProducto === "BIEN" &&
+      product.stock <= 0
+    ) {
       setMessage({
         tone: "error",
         text: `${product.nombre} no tiene stock disponible`,
@@ -2723,7 +2731,9 @@ export function PosApp({
                                         : ""}
                                       {formatCurrency(option.precio)} ·{" "}
                                       {option.tipoProducto === "BIEN"
-                                        ? `Stock ${option.stock.toFixed(3)}`
+                                        ? inventoryTrackingEnabled
+                                          ? `Stock ${option.stock.toFixed(3)}`
+                                          : "Sin control de stock"
                                         : "Servicio"}
                                     </Typography>
                                   </Stack>

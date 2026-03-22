@@ -215,6 +215,7 @@ export async function getPosBootstrap(session: SessionPayload) {
     },
     features: business.enabledFeatures,
     billingEnabled: hasBusinessFeature(business.enabledFeatures, "BILLING"),
+    inventoryTrackingEnabled: business.posSettings.trackInventoryOnSale,
     defaultDocumentType: getDefaultDocumentType(
       business.enabledFeatures,
       business.taxProfile?.requiresElectronicBilling,

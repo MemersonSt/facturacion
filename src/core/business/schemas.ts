@@ -48,6 +48,7 @@ export const updateBusinessSettingsSchema = z.object({
     "El punto de emision debe tener 3 digitos",
   ),
   invoiceNextSequence: z.number().int().min(1).default(1),
+  trackInventoryOnSale: z.boolean().default(true),
 });
 
 export type UpdateBusinessSettingsInput = z.infer<

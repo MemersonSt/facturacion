@@ -58,6 +58,9 @@ type BusinessSettingsResponse = {
       active: boolean;
     }>;
   }>;
+  posSettings: {
+    trackInventoryOnSale: boolean;
+  };
 };
 
 type FormState = {
@@ -78,6 +81,7 @@ type FormState = {
   invoiceEstablishmentCode: string;
   invoiceEmissionPointCode: string;
   invoiceNextSequence: number;
+  trackInventoryOnSale: boolean;
 };
 
 type SnackbarState = {
@@ -103,6 +107,7 @@ const DEFAULT_FORM: FormState = {
   invoiceEstablishmentCode: "001",
   invoiceEmissionPointCode: "001",
   invoiceNextSequence: 1,
+  trackInventoryOnSale: true,
 };
 
 const PROFILE_OPTIONS = [
@@ -146,6 +151,7 @@ function toFormState(data: BusinessSettingsResponse): FormState {
     invoiceEmissionPointCode:
       defaultInvoiceSeries?.emissionPointCode ?? "001",
     invoiceNextSequence: defaultInvoiceSeries?.nextSequence ?? 1,
+    trackInventoryOnSale: data.posSettings?.trackInventoryOnSale ?? true,
   };
 }
 
@@ -350,6 +356,40 @@ export function CompanySettingsPage({ canEdit }: CompanySettingsPageProps) {
                   disabled={!canEdit}
                 />
               </Box>
+            </Stack>
+          </Paper>
+
+          <Paper
+            sx={{
+              borderRadius: "24px",
+              borderColor: "divider",
+              backgroundColor: alpha(theme.palette.warning.light, 0.12),
+              p: { xs: 2, md: 2.5 },
+            }}
+          >
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                  Operacion POS
+                </Typography>
+                <Typography sx={{ mt: 0.5, color: "text.secondary", fontSize: 14 }}>
+                  Define si las ventas del POS deben validar y descontar stock
+                  automaticamente.
+                </Typography>
+              </Box>
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={form.trackInventoryOnSale}
+                    onChange={(e) =>
+                      updateField("trackInventoryOnSale", e.target.checked)
+                    }
+                    disabled={!canEdit}
+                  />
+                }
+                label="Controlar inventario al vender"
+              />
             </Stack>
           </Paper>
 

@@ -28,7 +28,9 @@ export async function POST(request: Request) {
       normalizedPayload.documentType = "NONE";
     }
 
-    const result = await checkout(normalizedPayload);
+    const result = await checkout(normalizedPayload, {
+      inventoryTrackingEnabled: business.posSettings.trackInventoryOnSale,
+    });
     const { backgroundDocumentTask, ...response } = result;
 
     if (backgroundDocumentTask) {

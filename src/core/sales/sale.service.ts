@@ -8,7 +8,8 @@ import { roundMoney } from "@/lib/utils";
 const logger = createLogger("SalesCreate");
 
 type SaleTimingContext = {
-  startedAt: number;
+  startedAt?: number;
+  inventoryTrackingEnabled?: boolean;
 };
 
 export type CreatedSaleContext = {
@@ -60,8 +61,11 @@ export async function createSaleInTransaction(
   input: CheckoutInput,
   timing?: SaleTimingContext,
 ): Promise<CreatedSaleContext> {
-  const paymentSum = roundMoney(input.payments.reduce((acc, payment) => acc + payment.total, 0));
+  const paymentSum = roundMoney(
+    input.payments.reduce((acc, payment) => acc + payment.total, 0),
+  );
   const startedAt = timing?.startedAt ?? startTimer();
+  const inventoryTrackingEnabled = timing?.inventoryTrackingEnabled ?? true;
 
   try {
     const customerStartedAt = startTimer();
@@ -120,20 +124,22 @@ export async function createSaleInTransaction(
     }
 
     const stockStartedAt = startTimer();
-    for (const [productId, qty] of aggregateQty) {
-      const updated = await tx.stockLevel.updateMany({
-        where: {
-          productId,
-          quantity: { gte: qty },
-        },
-        data: {
-          quantity: { decrement: qty },
-        },
-      });
+    if (inventoryTrackingEnabled) {
+      for (const [productId, qty] of aggregateQty) {
+        const updated = await tx.stockLevel.updateMany({
+          where: {
+            productId,
+            quantity: { gte: qty },
+          },
+          data: {
+            quantity: { decrement: qty },
+          },
+        });
 
-      if (updated.count === 0) {
-        const productName = productMap.get(productId)?.nombre ?? productId;
-        throw new Error(`Stock insuficiente para ${productName}`);
+        if (updated.count === 0) {
+          const productName = productMap.get(productId)?.nombre ?? productId;
+          throw new Error(`Stock insuficiente para ${productName}`);
+        }
       }
     }
 
@@ -219,17 +225,19 @@ export async function createSaleInTransaction(
       })),
     });
 
-    const stockMovements = lineComputations
-      .filter((line) => line.productType === "BIEN")
-      .map((line) => ({
-        productId: line.productId,
-        movementType: "OUT" as const,
-        referenceType: ReferenceType.SALE,
-        referenceId: sale.id,
-        quantity: line.quantity,
-        createdById: input.createdById,
-        notes: `Salida por venta #${sale.saleNumber.toString()}`,
-      }));
+    const stockMovements = inventoryTrackingEnabled
+      ? lineComputations
+          .filter((line) => line.productType === "BIEN")
+          .map((line) => ({
+            productId: line.productId,
+            movementType: "OUT" as const,
+            referenceType: ReferenceType.SALE,
+            referenceId: sale.id,
+            quantity: line.quantity,
+            createdById: input.createdById,
+            notes: `Salida por venta #${sale.saleNumber.toString()}`,
+          }))
+      : [];
 
     if (stockMovements.length > 0) {
       await tx.stockMovement.createMany({
@@ -243,8 +251,9 @@ export async function createSaleInTransaction(
       itemCount: lineComputations.length,
       customerUpsertMs: timerDurationMs(customerStartedAt),
       productLoadMs: timerDurationMs(productsStartedAt),
-      stockMs: timerDurationMs(stockStartedAt),
+      stockMs: inventoryTrackingEnabled ? timerDurationMs(stockStartedAt) : 0,
       persistenceMs: timerDurationMs(persistenceStartedAt),
+      inventoryTrackingEnabled,
       durationMs: timerDurationMs(startedAt),
     });
 

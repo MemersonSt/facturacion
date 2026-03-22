@@ -1,5 +1,10 @@
 import { BusinessFeatureKey, Prisma } from "@prisma/client";
 
+import {
+  DEFAULT_POS_FEATURE_CONFIG,
+  parsePosFeatureConfig,
+  serializePosFeatureConfig,
+} from "@/core/business/feature-config";
 import { prisma } from "@/lib/prisma";
 import type { UpdateBusinessSettingsInput } from "@/core/business/schemas";
 
@@ -25,6 +30,7 @@ const DEFAULT_BUSINESS_SELECT = {
     select: {
       key: true,
       enabled: true,
+      config: true,
     },
   },
   taxProfile: {
@@ -70,6 +76,9 @@ export type BusinessContext = Prisma.BusinessGetPayload<{
   select: typeof DEFAULT_BUSINESS_SELECT;
 }> & {
   enabledFeatures: BusinessFeatureKey[];
+  posSettings: {
+    trackInventoryOnSale: boolean;
+  };
 };
 
 function toEnabledFeatures(features: Array<{ key: BusinessFeatureKey; enabled: boolean }>) {
@@ -165,9 +174,12 @@ async function ensureDefaultDocumentSetup(params: {
 function toBusinessContext(
   business: Prisma.BusinessGetPayload<{ select: typeof DEFAULT_BUSINESS_SELECT }>,
 ): BusinessContext {
+  const posFeature = business.features.find((feature) => feature.key === "POS");
+
   return {
     ...business,
     enabledFeatures: toEnabledFeatures(business.features),
+    posSettings: parsePosFeatureConfig(posFeature?.config),
   };
 }
 
@@ -208,6 +220,11 @@ export async function ensureDefaultBusiness() {
           businessId: business.id,
           key: key as BusinessFeatureKey,
           enabled,
+          ...(key === "POS"
+            ? {
+                config: serializePosFeatureConfig(DEFAULT_POS_FEATURE_CONFIG),
+              }
+            : {}),
         },
       }),
     ),
@@ -372,6 +389,28 @@ export async function updateBusinessSettings(
       });
     }
   }
+
+  await prisma.businessFeature.upsert({
+    where: {
+      businessId_key: {
+        businessId,
+        key: "POS",
+      },
+    },
+    update: {
+      config: serializePosFeatureConfig({
+        trackInventoryOnSale: input.trackInventoryOnSale,
+      }),
+    },
+    create: {
+      businessId,
+      key: "POS",
+      enabled: DEFAULT_FEATURE_STATE.POS,
+      config: serializePosFeatureConfig({
+        trackInventoryOnSale: input.trackInventoryOnSale,
+      }),
+    },
+  });
 
   const refreshed = await prisma.business.findUnique({
     where: { id: businessId },
