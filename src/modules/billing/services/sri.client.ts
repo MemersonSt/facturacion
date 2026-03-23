@@ -15,15 +15,30 @@ const http = axios.create({
   },
 });
 
-export type SriEnvelope<T> = {
-  success: boolean;
-  data: T;
-  timestamp?: string;
+export type SriInvoiceArtifacts = {
+  signedXmlUrl?: string | null;
+  authorizedXmlUrl?: string | null;
+  responseReceptionUrl?: string | null;
+  responseAuthUrl?: string | null;
 };
 
-export type SriInvoiceCreateResponse = {
+export type SriInvoiceIssueResponse = {
   id?: string | null;
   issuerId?: string | null;
+  establecimiento?: string | null;
+  puntoEmision?: string | null;
+  fechaEmision?: string | null;
+  clienteTipoIdentificacion?: string | null;
+  clienteIdentificacion?: string | null;
+  clienteRazonSocial?: string | null;
+  clienteDireccion?: string | null;
+  clienteEmail?: string | null;
+  clienteTelefono?: string | null;
+  totalSinImpuestos?: number | null;
+  totalDescuento?: number | null;
+  propina?: number | null;
+  importeTotal?: number | null;
+  moneda?: string | null;
   secuencial: string | null;
   claveAcceso: string | null;
   status: string;
@@ -33,28 +48,15 @@ export type SriInvoiceCreateResponse = {
   authorizedAt: string | null;
   retryCount: number;
   lastError: string | null;
-  xmlUrl?: string;
-  rideUrl?: string;
-};
-
-export type SriInvoiceAuthorizeResponse = SriInvoiceCreateResponse & {
   detalles?: unknown[];
   pagos?: unknown[];
-  xmlUrl?: string;
-  rideUrl?: string;
+  infoAdicional?: Record<string, unknown> | null;
+  artifacts?: SriInvoiceArtifacts | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 export async function createInvoice(payload: unknown) {
-  const { data } = await http.post<SriEnvelope<SriInvoiceCreateResponse>>(
-    "/api/v1/invoices/issue",
-    payload,
-  );
-  return data;
-}
-
-export async function authorizeInvoice(externalInvoiceId: string) {
-  const { data } = await http.post<SriEnvelope<SriInvoiceAuthorizeResponse>>(
-    `/api/v1/invoices/${externalInvoiceId}/authorize`,
-  );
+  const { data } = await http.post<SriInvoiceIssueResponse>("/api/v1/invoices/issue", payload);
   return data;
 }

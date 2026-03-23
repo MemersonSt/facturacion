@@ -10,7 +10,6 @@ import { reserveDocumentNumber } from "@/core/sales/document-series.service";
 import { createLogger, startTimer, timerDurationMs } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { resolveProductCode } from "@/lib/utils";
-import { SRI_SIGNATURE_ISSUER_ID } from "@/modules/billing/services/sri.client";
 import {
   buildSriNumericCode,
   generateAccessKey,
@@ -86,13 +85,20 @@ function sriCurrencyCode(currency: string | null | undefined) {
 function toInvoicePayload(
   context: CreatedSaleContext,
   params: {
+    issuerId: string;
+    establishmentCode: string;
+    emissionPointCode: string;
     formattedSequence: string;
+    accessKey: string;
   },
 ) {
   return {
-    issuerId: SRI_SIGNATURE_ISSUER_ID,
+    issuerId: params.issuerId,
     fechaEmision: context.documentInput.fechaEmision,
+    establecimiento: params.establishmentCode,
+    puntoEmision: params.emissionPointCode,
     secuencial: params.formattedSequence,
+    claveAcceso: params.accessKey,
     autorizar: true,
     clienteTipoIdentificacion: context.customer.tipoIdentificacion,
     clienteIdentificacion: context.customer.identificacion,
@@ -277,7 +283,11 @@ export async function createDocumentForSaleInTransaction(
     tipoEmision: "1",
   });
   const invoicePayload = toInvoicePayload(context, {
+    issuerId: context.documentInput.issuerId,
+    establishmentCode: numbering.establishmentCode,
+    emissionPointCode: numbering.emissionPointCode,
     formattedSequence: numbering.formattedSequence,
+    accessKey,
   });
 
   await tx.saleDocument.update({
