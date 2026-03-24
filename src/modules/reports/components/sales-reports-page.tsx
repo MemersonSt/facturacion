@@ -502,9 +502,17 @@ export function SalesReportsPage() {
       params.delete("sellerId");
     }
 
-    startRoutingTransition(() => {
-      router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname);
-    });
+    /*
+      startRoutingTransition(() => {
+        router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname);
+      });
+    */
+
+    //cambio realizado 
+    //actualiza la fecha de reporte automaticamente sin actualizar la pagina
+    const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+
+    router.replace(newUrl);
   }
 
   function resetFilters() {
@@ -1107,3 +1115,4 @@ export function SalesReportsPage() {
     </Stack>
   );
 }
+
