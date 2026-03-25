@@ -885,10 +885,11 @@ export function InvoiceDetailModal({
   onClose,
 }: InvoiceDetailModalProps) {
   const serviceInvoiceId = invoice?.externalInvoiceId ?? invoice?.id ?? "";
+  const printableSaleId = invoice?.sale?.id ?? "";
   const isAuthorized = invoice?.status === "AUTHORIZED";
   const isCancelled = invoice?.sale?.status === "CANCELLED";
   const canDownloadXml = isAuthorized && Boolean(serviceInvoiceId);
-  const canDownloadRide = isAuthorized && Boolean(serviceInvoiceId);
+  const canDownloadPdf = Boolean(printableSaleId);
   const formattedCreatedAt = invoice?.createdAt
     ? new Date(invoice.createdAt).toLocaleString("es-EC")
     : "-";
@@ -1118,10 +1119,10 @@ export function InvoiceDetailModal({
               <MuiButton
                 type="button"
                 variant="outlined"
-                disabled={!canDownloadRide}
+                disabled={!canDownloadPdf}
                 onClick={() => {
-                  if (!canDownloadRide) return;
-                  window.open(`/api/v1/sri-invoices/${serviceInvoiceId}/ride`, "_blank", "noopener,noreferrer");
+                  if (!canDownloadPdf) return;
+                  window.open(`/api/v1/sales/${printableSaleId}/print`, "_blank", "noopener,noreferrer");
                 }}
               >
                 <Download className="h-4 w-4" />
@@ -1140,9 +1141,9 @@ export function InvoiceDetailModal({
                 Descargar XML
               </MuiButton>
             </div>
-            {!isAuthorized ? (
-              <p className="mt-2 text-xs text-slate-500">Se habilitan cuando la factura esta autorizada.</p>
-            ) : null}
+            <p className="mt-2 text-xs text-slate-500">
+              El PDF puede reimprimirse desde la venta. El XML se habilita cuando la factura esta autorizada.
+            </p>
           </Paper>
           </Box>
         )}
