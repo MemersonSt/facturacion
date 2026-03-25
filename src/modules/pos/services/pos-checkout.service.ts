@@ -1,6 +1,8 @@
 import {
   checkout,
   type CheckoutOptions,
+  type CheckoutResult,
+  refreshCheckoutResult,
   toCheckoutResponse,
   type CheckoutResponse,
 } from "@/core/sales/checkout.service";
@@ -20,11 +22,13 @@ export async function runPosCheckout(
   options?: CheckoutOptions,
   handlers?: PosCheckoutHandlers,
 ): Promise<PosCheckoutResponse> {
-  const result = await checkout(rawInput, options);
+  let result: CheckoutResult = await checkout(rawInput, options);
 
   if (result.backgroundDocumentTask) {
-    await preparePendingSaleDocumentAuthorization(result.backgroundDocumentTask);
-    await handlers?.scheduleDocumentAuthorization?.(result.backgroundDocumentTask);
+    const backgroundTask = result.backgroundDocumentTask;
+    await preparePendingSaleDocumentAuthorization(backgroundTask);
+    result = await refreshCheckoutResult(result);
+    await handlers?.scheduleDocumentAuthorization?.(backgroundTask);
   }
 
   return toCheckoutResponse(result);

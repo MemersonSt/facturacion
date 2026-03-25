@@ -49,7 +49,21 @@ export async function POST(request: Request) {
       },
     );
 
-    return ok(result, { status: 201 });
+    return ok(
+      {
+        ...result,
+        business: {
+          id: business.id,
+          name: business.name,
+          legalName: business.legalName,
+          ruc: business.ruc,
+          address: business.address,
+          phone: business.phone,
+          email: business.email,
+        },
+      },
+      { status: 201 },
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return fail("Payload invalido", 400, error.flatten());

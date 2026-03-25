@@ -212,6 +212,11 @@ export async function getPosBootstrap(session: SessionPayload) {
     business: {
       id: business.id,
       name: business.name,
+      legalName: business.legalName,
+      ruc: business.ruc,
+      address: business.address,
+      phone: business.phone,
+      email: business.email,
     },
     operator: {
       id: session.sub,

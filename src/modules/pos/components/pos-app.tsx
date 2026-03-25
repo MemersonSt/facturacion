@@ -141,6 +141,11 @@ export type PosBootstrap = {
   business: {
     id: string;
     name: string;
+    legalName?: string | null;
+    ruc?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
   };
   operator: {
     id: string;
@@ -159,8 +164,18 @@ export type PosBootstrap = {
 
 type CheckoutResponse = {
   saleNumber: string;
+  business?: {
+    id: string;
+    name: string;
+    legalName?: string | null;
+    ruc?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  };
   totals: {
     subtotal: number;
+    discountTotal: number;
     taxTotal: number;
     total: number;
   };
@@ -177,6 +192,8 @@ type CheckoutResponse = {
   invoice: {
     sriInvoiceId: string;
     status: "DRAFT" | "AUTHORIZED" | "PENDING_SRI" | "ERROR";
+    authorizationNumber: string | null;
+    claveAcceso: string | null;
   } | null;
 };
 
@@ -1754,24 +1771,36 @@ export function PosApp({
       });
 
       const ticketData: PosTicketData = {
-        businessName: bootstrap.business.name,
+        businessName: result.business?.name ?? bootstrap.business.name,
+        businessLegalName:
+          result.business?.legalName ?? bootstrap.business.legalName,
+        businessRuc: result.business?.ruc ?? bootstrap.business.ruc,
+        businessAddress:
+          result.business?.address ?? bootstrap.business.address,
+        businessPhone: result.business?.phone ?? bootstrap.business.phone,
+        businessEmail: result.business?.email ?? bootstrap.business.email,
+        accountingRequired:
+          bootstrap.billingRuntime.operationalRules.accountingRequired,
+        environment: bootstrap.billingRuntime.environment,
         operatorName: bootstrap.operator.name,
         saleNumber: result.saleNumber,
+        documentType: result.document.type,
         documentNumber: result.document.fullNumber,
         createdAt: formatDateTime(new Date()),
         customerName: effectiveCustomer.razonSocial,
+        customerIdentification: effectiveCustomer.identificacion,
+        customerEmail: effectiveCustomer.email ?? "",
+        customerPhone: effectiveCustomer.telefono ?? "",
+        customerAddress: effectiveCustomer.direccion ?? "",
         paymentMethodLabel: paymentSummaryLabel,
         documentLabel:
           result.document.type === "INVOICE"
-            ? result.invoice?.status === "AUTHORIZED"
-              ? result.document.fullNumber
-                ? `Factura ${result.document.fullNumber} autorizada`
-                : "Factura autorizada"
-              : result.document.fullNumber
-                ? `Factura ${result.document.fullNumber} en proceso`
-                : "Factura en proceso"
-            : "Ticket POS",
+            ? "FACTURA"
+            : "COMPROBANTE DE VENTA",
+        authorizationNumber: result.invoice?.authorizationNumber ?? null,
+        accessKey: result.invoice?.claveAcceso ?? null,
         subtotal: result.totals.subtotal,
+        discountTotal: result.totals.discountTotal,
         taxTotal: result.totals.taxTotal,
         total: result.totals.total,
         lines: linePreview.map((line) => ({

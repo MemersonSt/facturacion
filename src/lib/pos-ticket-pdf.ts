@@ -162,11 +162,42 @@ function inferDocumentTitle(documentLabel: string, documentNumber: string | null
   return label.toUpperCase();
 }
 
+function accountingRequiredLabel(value?: boolean) {
+  return value ? "SI" : "NO";
+}
+
+function environmentLabel(value?: string | null) {
+  return value === "PRODUCCION" ? "PRODUCCION" : "PRUEBAS";
+}
+
+function authorizationReference(data: PosTicketData) {
+  return data.authorizationNumber || data.accessKey || "";
+}
+
+function ticketFieldValue(value?: string | null) {
+  const normalized = value?.trim();
+  return normalized ? normalized : "-";
+}
+
+function ticketBusinessContact(data: PosTicketData) {
+  const values = [data.businessPhone?.trim(), data.businessEmail?.trim()].filter(
+    (value): value is string => Boolean(value),
+  );
+  return values.length > 0 ? values.join(" / ") : "-";
+}
+
 function paymentLines(paymentMethodLabel: string) {
   const lines = wrapText(paymentMethodLabel, TICKET_WIDTH - 2);
   return [
     "Forma de pago:",
     ...lines.map((line, index) => (index === 0 ? line : ` ${line}`)),
+  ];
+}
+
+function stackedLabelValueLines(label: string, value: string, width = TICKET_WIDTH) {
+  return [
+    `${label}:`,
+    ...wrapText(value, width).map((line) => line),
   ];
 }
 
@@ -305,53 +336,88 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
   esc.initialize();
   esc.codePagePc858();
 
-  // Prueba con Font A primero
   esc.fontA();
   esc.normalSize();
 
-  // Encabezado
   esc.alignCenter();
-  esc.boldOn();
-  for (const line of wrapText((data.businessName ?? "").toUpperCase(), TICKET_WIDTH)) {
+  for (const line of wrapText(
+    (data.businessLegalName ?? data.businessName ?? "").toUpperCase(),
+    TICKET_WIDTH,
+  )) {
     esc.line(centerText(line, TICKET_WIDTH));
   }
-  esc.boldOff();
+
+  if (
+    data.businessLegalName &&
+    data.businessName &&
+    data.businessLegalName !== data.businessName
+  ) {
+    for (const line of wrapText(data.businessName.toUpperCase(), TICKET_WIDTH)) {
+      esc.line(centerText(line, TICKET_WIDTH));
+    }
+  }
+
+  for (const line of labelValueLines("RUC", ticketFieldValue(data.businessRuc))) {
+    esc.line(centerText(line, TICKET_WIDTH));
+  }
+
+  for (const line of labelValueLines("Direccion", ticketFieldValue(data.businessAddress))) {
+    esc.line(centerText(line, TICKET_WIDTH));
+  }
+
+  for (const line of labelValueLines("Contacto", ticketBusinessContact(data))) {
+    esc.line(centerText(line, TICKET_WIDTH));
+  }
 
   if (documentTitle) {
-    esc.boldOn();
     for (const line of wrapText(documentTitle, TICKET_WIDTH)) {
       esc.line(centerText(line, TICKET_WIDTH));
     }
-    esc.boldOff();
   }
 
   if (data.documentNumber) {
-    for (const line of wrapText(data.documentNumber, TICKET_WIDTH)) {
+    for (const line of wrapText(
+      `${data.documentType === "INVOICE" ? "FAC #:" : "COMP #:"}${data.documentNumber}`,
+      TICKET_WIDTH,
+    )) {
       esc.line(centerText(line, TICKET_WIDTH));
     }
   }
 
-  // if (
-  //   data.documentLabel &&
-  //   normalizePrintableText(data.documentLabel).trim().toUpperCase() !== documentTitle
-  // ) {
-  //   for (const line of wrapText(data.documentLabel, TICKET_WIDTH)) {
-  //     esc.line(centerText(line, TICKET_WIDTH));
-  //   }
-  // }
+  if (data.documentType === "INVOICE") {
+    for (const line of labelValueLines("Ambiente", environmentLabel(data.environment))) {
+      esc.line(centerText(line, TICKET_WIDTH));
+    }
 
-  if (data.saleNumber) {
+    for (const line of labelValueLines("Emision", "NORMAL")) {
+      esc.line(centerText(line, TICKET_WIDTH));
+    }
+
+    for (const line of stackedLabelValueLines(
+      "No. de autorizacion",
+      ticketFieldValue(data.authorizationNumber),
+    )) {
+      esc.line(centerText(line, TICKET_WIDTH));
+    }
+
+    for (const line of stackedLabelValueLines(
+      "Clave de acceso",
+      ticketFieldValue(data.accessKey),
+    )) {
+      esc.line(centerText(line, TICKET_WIDTH));
+    }
+  } else if (data.saleNumber) {
     esc.line(centerText(`Venta #${data.saleNumber}`, TICKET_WIDTH));
   }
 
   esc.alignLeft();
   esc.line(divider());
 
-  for (const line of labelValueLines("Fecha", data.createdAt ?? "")) {
+  for (const line of labelValueLines("Cajero", data.operatorName ?? "")) {
     esc.line(line);
   }
 
-  for (const line of labelValueLines("Operador", data.operatorName ?? "")) {
+  for (const line of labelValueLines("Fecha", data.createdAt ?? "")) {
     esc.line(line);
   }
 
@@ -359,12 +425,37 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
     esc.line(line);
   }
 
+  for (const line of labelValueLines(
+    "Email",
+    ticketFieldValue(data.customerEmail),
+  )) {
+    esc.line(line);
+  }
+
+  for (const line of labelValueLines(
+    "Telefono",
+    ticketFieldValue(data.customerPhone),
+  )) {
+    esc.line(line);
+  }
+
+  for (const line of labelValueLines(
+    "Direccion",
+    ticketFieldValue(data.customerAddress),
+  )) {
+    esc.line(line);
+  }
+
+  for (const line of labelValueLines(
+    "Cedula/RUC",
+    ticketFieldValue(data.customerIdentification),
+  )) {
+    esc.line(line);
+  }
+
   esc.line(divider());
 
-  // Detalle
-  esc.boldOn();
   esc.line(itemHeaderLine1());
-  esc.boldOff();
   esc.line(dividerThin());
 
   for (const item of data.lines ?? []) {
@@ -382,14 +473,10 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
     esc.line(dividerThin());
   }
 
-  // Totales
   esc.line(amountLine("Subtotal", formatMoney(data.subtotal ?? 0)));
-  esc.line(amountLine("Dcto", "0.00"));
+  esc.line(amountLine("Dcto", formatMoney(data.discountTotal ?? 0)));
   esc.line(amountLine("IVA", formatMoney(data.taxTotal ?? 0)));
-
-  esc.boldOn();
   esc.line(amountLine("TOTAL", formatMoney(data.total ?? 0)));
-  esc.boldOff();
 
   esc.line(divider());
 
@@ -398,11 +485,6 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
   }
 
   esc.line(divider());
-
-  esc.alignCenter();
-  esc.boldOn();
-  esc.line("Gracias por su compra");
-  esc.boldOff();
 
   esc.feed(4);
   esc.cut();
