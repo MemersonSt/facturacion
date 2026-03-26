@@ -269,7 +269,7 @@ async function buildQuotePdf(quote: Awaited<ReturnType<typeof getQuoteDetail>>) 
     15,
   );
   leftY -= titleLines * 15 + 10;
-  leftY -= drawSimpleField(page, "Dir Matriz", "Pancho Jacome Solar 4A Mz 252", leftBoxX + 12, leftY, leftBoxWidth - 24, ctx) * 11 + 4;
+  // leftY -= drawSimpleField(page, "Dir Matriz", "Pancho Jacome Solar 4A Mz 252", leftBoxX + 12, leftY, leftBoxWidth - 24, ctx) * 11 + 4;
   leftY -= drawSimpleField(page, "Obligado a llevar contabilidad", "NO", leftBoxX + 12, leftY, leftBoxWidth - 24, ctx) * 11 + 4;
   leftY -= drawSimpleField(page, "Documento", "COTIZACION / PROFORMA", leftBoxX + 12, leftY, leftBoxWidth - 24, ctx, { valueBold: true }) * 11;
 
