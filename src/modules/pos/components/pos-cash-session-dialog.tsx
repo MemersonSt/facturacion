@@ -16,6 +16,7 @@ import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { alpha } from "@mui/material/styles";
 import {
   ArrowDownCircle,
@@ -50,8 +51,12 @@ type CashMovement = {
 
 type CashSessionInfo = {
   id: string;
+  status?: "OPEN" | "CLOSED" | "PENDING_APPROVAL";
   openingAmount: number;
   openedAt: string;
+  closingAmount?: number | null;
+  closedAt?: string | null;
+  notes?: string | null;
   // Legacy
   salesCount?: number;
   salesTotal?: number;
@@ -76,6 +81,7 @@ type PosCashSessionDialogProps = {
   onClosingNotesChange: (value: string) => void;
   onOpenCash: () => void;
   onCloseCash: () => void;
+  onReprintClosedSession: (session: CashSessionInfo) => void;
   onClose: () => void;
 };
 
@@ -93,6 +99,14 @@ function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("es-EC", {
     dateStyle: "medium",
     timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatDateYmd(value: string) {
+  return new Intl.DateTimeFormat("sv-SE", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).format(new Date(value));
 }
 
@@ -478,6 +492,140 @@ function MovementsTab({ sessionId }: { sessionId: string }) {
   );
 }
 
+function HistoryTab({
+  open,
+  onReprint,
+}: {
+  open: boolean;
+  onReprint: (session: CashSessionInfo) => void;
+}) {
+  const [rows, setRows] = useState<CashSessionInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadHistory = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchJson<CashSessionInfo[]>("/api/v1/pos/cash-session");
+      setRows(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo cargar historial");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadHistory();
+  }, [loadHistory, open]);
+
+  const columns: GridColDef<CashSessionInfo>[] = [
+    {
+      field: "openedAt",
+      headerName: "Apertura",
+      flex: 1.2,
+      minWidth: 150,
+      valueFormatter: (value?: string) => (value ? formatDateYmd(value) : "-"),
+    },
+    {
+      field: "closedAt",
+      headerName: "Cierre",
+      flex: 1.2,
+      minWidth: 150,
+      valueFormatter: (value?: string | null) => (value ? formatDateYmd(value) : "-"),
+    },
+    {
+      field: "openingAmount",
+      headerName: "Apertura $",
+      width: 110,
+      align: "right",
+      headerAlign: "right",
+      valueFormatter: (value?: number) => formatCurrency(value ?? 0),
+    },
+    {
+      field: "salesTotal",
+      headerName: "Ventas $",
+      width: 110,
+      align: "right",
+      headerAlign: "right",
+      valueFormatter: (value?: number) => formatCurrency(value ?? 0),
+    },
+    {
+      field: "closingAmount",
+      headerName: "Cierre $",
+      width: 110,
+      align: "right",
+      headerAlign: "right",
+      valueFormatter: (value?: number | null) => formatCurrency(value ?? 0),
+    },
+    {
+      field: "salesCount",
+      headerName: "Ventas",
+      width: 90,
+      align: "center",
+      headerAlign: "center",
+    },
+    {
+      field: "actions",
+      headerName: "",
+      sortable: false,
+      filterable: false,
+      width: 140,
+      renderCell: ({ row }) => (
+        <Button size="small" variant="outlined" onClick={() => onReprint(row)}>
+          Reimprimir
+        </Button>
+      ),
+    },
+  ];
+
+  return (
+    <Stack spacing={1.5}>
+      {error ? <Typography variant="body2" color="error">{error}</Typography> : null}
+      <Paper
+        elevation={0}
+        sx={{
+          borderRadius: "14px",
+          border: "1px solid",
+          borderColor: "divider",
+          overflow: "hidden",
+        }}
+      >
+        <DataGrid
+          rows={rows}
+          columns={columns}
+          loading={loading}
+          disableColumnMenu
+          disableRowSelectionOnClick
+          hideFooterSelectedRowCount
+          getRowHeight={() => 44}
+          initialState={{
+            pagination: {
+              paginationModel: {
+                pageSize: 8,
+                page: 0,
+              },
+            },
+          }}
+          pageSizeOptions={[8, 15]}
+          sx={{
+            border: 0,
+            minHeight: 360,
+            "& .MuiDataGrid-columnHeaders": {
+              backgroundColor: alpha("#6e5642", 0.08),
+            },
+            "& .MuiDataGrid-cell:focus, & .MuiDataGrid-columnHeader:focus": {
+              outline: "none",
+            },
+          }}
+        />
+      </Paper>
+    </Stack>
+  );
+}
+
 // ─── Main Dialog ─────────────────────────────────────────────────────────────
 
 export function PosCashSessionDialog({
@@ -495,6 +643,7 @@ export function PosCashSessionDialog({
   onClosingNotesChange,
   onOpenCash,
   onCloseCash,
+  onReprintClosedSession,
   onClose,
 }: PosCashSessionDialogProps) {
   const hasOpenCash = Boolean(cashSession);
@@ -502,6 +651,7 @@ export function PosCashSessionDialog({
     cashRuntime?.enabled &&
     hasOpenCash &&
     (cashRuntime.capabilities.withdrawals || cashRuntime.capabilities.deposits);
+  const showHistoryTab = true;
 
   const [activeTab, setActiveTab] = useState(0);
 
@@ -525,18 +675,19 @@ export function PosCashSessionDialog({
         },
       }}
     >
-      <DialogTitle sx={{ pb: showMovementsTab ? 0 : undefined }}>
+      <DialogTitle sx={{ pb: showMovementsTab || showHistoryTab ? 0 : undefined }}>
         {hasOpenCash ? "Caja abierta" : "Abrir caja"}
       </DialogTitle>
 
-      {showMovementsTab && (
+      {(showMovementsTab || showHistoryTab) && (
         <Tabs
           value={activeTab}
           onChange={(_, v: number) => setActiveTab(v)}
           sx={{ px: 3, borderBottom: 1, borderColor: "divider" }}
         >
           <Tab label="Cierre" />
-          <Tab label="Movimientos" />
+          {showMovementsTab ? <Tab label="Movimientos" /> : null}
+          {showHistoryTab ? <Tab label="Historial" /> : null}
         </Tabs>
       )}
 
@@ -591,11 +742,15 @@ export function PosCashSessionDialog({
         {showMovementsTab && activeTab === 1 && cashSession && (
           <MovementsTab sessionId={cashSession.id} />
         )}
+
+        {showHistoryTab && activeTab === (showMovementsTab ? 2 : 1) && (
+          <HistoryTab open={open} onReprint={onReprintClosedSession} />
+        )}
       </DialogContent>
 
       <DialogActions sx={{ justifyContent: "space-between" }}>
         <Button variant="outlined" onClick={onClose} disabled={submitting}>
-          {activeTab === 1 ? "Cerrar" : "Cancelar"}
+          {activeTab > 0 ? "Cerrar" : "Cancelar"}
         </Button>
 
         {activeTab === 0 && (

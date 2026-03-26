@@ -311,6 +311,24 @@ export async function closeCashSession(session: SessionPayload, rawInput: unknow
   return getCashSessionSummary(updated);
 }
 
+export async function listClosedCashSessions(session: SessionPayload) {
+  const business = await getPosBusinessContext(session);
+
+  const sessions = await prisma.posCashSession.findMany({
+    where: {
+      businessId: business.id,
+      openedById: session.sub,
+      status: PosCashSessionStatus.CLOSED,
+    },
+    orderBy: {
+      closedAt: "desc",
+    },
+    take: 30,
+  });
+
+  return Promise.all(sessions.map((cashSession) => getCashSessionSummary(cashSession)));
+}
+
 export async function listHeldSales(session: SessionPayload) {
   const business = await getPosBusinessContext(session);
 

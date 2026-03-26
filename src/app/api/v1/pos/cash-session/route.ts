@@ -1,8 +1,21 @@
 import { z } from "zod";
 
-import { closeCashSession, openCashSession } from "@/modules/pos/services/pos.service";
+import { closeCashSession, listClosedCashSessions, openCashSession } from "@/modules/pos/services/pos.service";
 import { getSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
+
+export async function GET() {
+  try {
+    const session = await getSession();
+    if (!session) return fail("No autenticado", 401);
+
+    const data = await listClosedCashSessions(session);
+    return ok(data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudieron obtener los cierres de caja";
+    return fail(message, 400);
+  }
+}
 
 export async function POST(request: Request) {
   try {

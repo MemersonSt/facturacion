@@ -2062,6 +2062,39 @@ export function PosApp({
     }
   }
 
+  function buildLegacyCashCloseTicketData(session: {
+    id: string;
+    openingAmount: number;
+    closingAmount?: number | null;
+    openedAt: string;
+    closedAt?: string | null;
+    notes?: string | null;
+    salesCount?: number;
+    salesTotal?: number;
+  }): CashCloseTicketData | null {
+    if (!bootstrap) return null;
+
+    return {
+      businessName: bootstrap.business.name,
+      businessLegalName: bootstrap.business.legalName,
+      businessRuc: bootstrap.business.ruc,
+      businessAddress: bootstrap.business.address,
+      businessPhone: bootstrap.business.phone,
+      businessEmail: bootstrap.business.email,
+      operatorName: bootstrap.operator.name,
+      sessionId: session.id,
+      openedAt: formatDateTime(session.openedAt),
+      closedAt: formatDateTime(session.closedAt ?? new Date()),
+      openingAmount: session.openingAmount,
+      salesCashTotal: session.salesTotal ?? 0,
+      salesLabel: "Total vendido",
+      salesCount: session.salesCount ?? 0,
+      declaredClosing: session.closingAmount ?? 0,
+      declaredClosingLabel: "Cierre registrado",
+      notes: session.notes,
+    };
+  }
+
   function handleSnackbarClose(_: Event | SyntheticEvent, reason?: string) {
     if (reason === "clickaway") {
       return;
@@ -3654,6 +3687,17 @@ export function PosApp({
         onClosingNotesChange={setClosingNotes}
         onOpenCash={() => void openCash()}
         onCloseCash={() => void closeCash()}
+        onReprintClosedSession={(session) => {
+          const ticketData = buildLegacyCashCloseTicketData(session);
+          if (!ticketData) {
+            setMessage({
+              tone: "error",
+              text: "No se pudo preparar la reimpresion del cierre",
+            });
+            return;
+          }
+          void printCashCloseTicket(ticketData);
+        }}
         onClose={() => setCashDialogOpen(false)}
       />
       <PosHeldSalesDialog

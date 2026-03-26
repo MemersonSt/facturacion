@@ -27,6 +27,22 @@ import {
 
 export const DEFAULT_BUSINESS_SLUG = "default";
 const DEFAULT_DOCUMENT_ISSUER_CODE = "MAIN";
+const MANAGED_POS_POLICY_PACKS = new Set(["POS_GENERIC", "POS_BUTCHERY", "POS_RESTAURANT"]);
+const MANAGED_MODULES = new Set(["POS", "CASH_MANAGEMENT"]);
+const MANAGED_CAPABILITIES = new Set([
+  "POS_SCALE_BARCODES",
+  "POS_WEIGHT_FROM_BARCODE",
+  "POS_TRACK_INVENTORY_ON_SALE",
+  "POS_TABLE_SERVICE",
+  "POS_KITCHEN_TICKETS",
+  "CASH_SESSION_REQUIRED",
+  "CASH_DECLARED_CLOSING",
+  "CASH_WITHDRAWALS",
+  "CASH_DEPOSITS",
+  "CASH_SHIFT_RECONCILIATION",
+  "CASH_BLIND_CLOSE",
+  "CASH_APPROVAL_CLOSE",
+]);
 
 const DEFAULT_FEATURE_STATE: Record<BusinessFeatureKey, boolean> = {
   BILLING: true,
@@ -348,6 +364,15 @@ export async function updateBusinessSettings(
   businessId: string,
   input: UpdateBusinessSettingsInput,
 ) {
+  const existingBusiness = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: DEFAULT_BUSINESS_SELECT,
+  });
+
+  if (!existingBusiness) {
+    throw new Error("Negocio no encontrado");
+  }
+
   const existingPosFeature = await prisma.businessFeature.findUnique({
     where: {
       businessId_key: {
@@ -371,17 +396,45 @@ export async function updateBusinessSettings(
     enabled: posEnabled,
   });
   const nextCashPolicy = input.cashPolicy ?? DEFAULT_CASH_POLICY_EDITOR;
+  const currentBusinessContext = toBusinessContext(existingBusiness);
+  const legacyBlueprint = mapLegacyBusinessBlueprint({
+    features: existingBusiness.features,
+    posSettings: parsePosFeatureConfig(
+      existingBusiness.features.find((feature) => feature.key === "POS")?.config,
+    ),
+  });
+  const preservedBlueprint: BusinessBlueprint = {
+    modules: Array.from(
+      new Set(
+        [...currentBusinessContext.blueprint.modules, ...legacyBlueprint.modules].filter(
+          (module) => !MANAGED_MODULES.has(module),
+        ),
+      ),
+    ),
+    edition: currentBusinessContext.blueprint.edition,
+    policyPacks: currentBusinessContext.blueprint.policyPacks.filter(
+      (policyPack) => !MANAGED_POS_POLICY_PACKS.has(policyPack),
+    ),
+    capabilities: Array.from(
+      new Set(
+        [...currentBusinessContext.blueprint.capabilities, ...legacyBlueprint.capabilities].filter(
+          (capability) => !MANAGED_CAPABILITIES.has(capability),
+        ),
+      ),
+    ),
+  };
 
   // Blueprint canónico: combina POS + Cash Management.
   // Se persiste en Business.blueprintConfig — fuente de verdad del composition system.
   const cashFragment = cashPolicyToBlueprint(nextCashPolicy);
-  const canonicalBlueprint = mergeBusinessBlueprint(nextPosBlueprint, {
-    modules: cashFragment.modules,
-    edition: nextPosBlueprint.edition,
-    policyPacks: [],
-    capabilities: cashFragment.capabilities,
+  const canonicalBlueprint = mergeBusinessBlueprint(preservedBlueprint, {
+    modules: Array.from(new Set([...nextPosBlueprint.modules, ...cashFragment.modules])),
+    edition: preservedBlueprint.edition,
+    policyPacks: nextPosBlueprint.policyPacks,
+    capabilities: Array.from(
+      new Set([...nextPosBlueprint.capabilities, ...cashFragment.capabilities]),
+    ),
   });
-
   const business = await prisma.business.update({
     where: { id: businessId },
     data: {
