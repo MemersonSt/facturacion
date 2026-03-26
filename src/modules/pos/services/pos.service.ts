@@ -1,5 +1,4 @@
 import {
-  BusinessFeatureKey,
   PosCashSessionStatus,
   Prisma,
 } from "@prisma/client";
@@ -9,6 +8,10 @@ import { listProducts } from "@/core/inventory/inventory.service";
 import type { SessionPayload } from "@/lib/auth";
 import { createLogger, startTimer, timerDurationMs } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { resolveBillingRuntime } from "@/modules/billing/policies/resolve-billing-runtime";
+import { resolvePosRuntime } from "@/modules/pos/policies/resolve-pos-runtime";
+import { resolveCashRuntime } from "@/modules/cash-management/policies/resolve-cash-runtime";
+import { getActiveCashSession } from "@/core/cash-management/cash-session.service";
 import { roundMoney } from "@/lib/utils";
 import {
   closeCashSessionSchema,
@@ -32,11 +35,8 @@ type PosCashSessionSummary = {
   salesTotal: number;
 };
 
-function getDefaultDocumentType(
-  features: readonly BusinessFeatureKey[],
-  requiresElectronicBilling: boolean | undefined,
-) {
-  return hasBusinessFeature(features, "BILLING") && requiresElectronicBilling ? "INVOICE" : "NONE";
+function getDefaultDocumentType(electronicBillingEnabled: boolean) {
+  return electronicBillingEnabled ? "INVOICE" : "NONE";
 }
 
 async function getPosBusinessContext(session: SessionPayload) {
@@ -181,6 +181,14 @@ async function listPosCustomers() {
 export async function getPosBootstrap(session: SessionPayload) {
   const startedAt = startTimer();
   const business = await getPosBusinessContext(session);
+  const billingRuntime = resolveBillingRuntime({
+    blueprint: business.blueprint,
+    taxProfile: business.taxProfile,
+  });
+  const posRuntime = resolvePosRuntime({
+    blueprint: business.blueprint,
+  });
+  const cashRuntime = resolveCashRuntime(business.blueprint);
   const defaultIssuerId = business.taxProfile?.issuerId;
 
   if (!defaultIssuerId) {
@@ -200,27 +208,32 @@ export async function getPosBootstrap(session: SessionPayload) {
       },
       take: 12,
     }),
-    getOpenCashSession(session, business.id),
+    cashRuntime.enabled
+      ? getActiveCashSession(business.id, session.sub)
+      : getOpenCashSession(session, business.id),
   ]);
 
   const data = {
     business: {
       id: business.id,
       name: business.name,
+      legalName: business.legalName,
+      ruc: business.ruc,
+      address: business.address,
+      phone: business.phone,
+      email: business.email,
     },
     operator: {
       id: session.sub,
       name: session.name,
       role: session.role,
     },
+    billingRuntime,
+    posRuntime,
+    cashRuntime,
     features: business.enabledFeatures,
-    billingEnabled: hasBusinessFeature(business.enabledFeatures, "BILLING"),
-    inventoryTrackingEnabled: business.posSettings.trackInventoryOnSale,
-    useButcheryScaleBarcodeWeight:
-      business.posSettings.useButcheryScaleBarcodeWeight,
     defaultDocumentType: getDefaultDocumentType(
-      business.enabledFeatures,
-      business.taxProfile?.requiresElectronicBilling,
+      billingRuntime.capabilities.electronicBilling,
     ),
     defaultIssuerId,
     cashSession,

@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { posPolicyEditorSchema } from "@/modules/pos/policies/pos-policy-editor";
+import { cashPolicyEditorSchema } from "@/modules/cash-management/policies/cash-policy-editor";
+
 export const businessProfileTypeSchema = z.enum([
   "GENERAL",
   "RIMPE_NEGOCIO_POPULAR",
@@ -50,6 +53,8 @@ export const updateBusinessSettingsSchema = z.object({
   invoiceNextSequence: z.number().int().min(1).default(1),
   trackInventoryOnSale: z.boolean().default(true),
   useButcheryScaleBarcodeWeight: z.boolean().default(false),
+  posPolicy: posPolicyEditorSchema.optional(),
+  cashPolicy: cashPolicyEditorSchema.optional(),
 });
 
 export type UpdateBusinessSettingsInput = z.infer<

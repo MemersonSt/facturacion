@@ -7,14 +7,29 @@ export type PosTicketLine = {
 
 export type PosTicketData = {
   businessName: string;
+  businessLegalName?: string | null;
+  businessRuc?: string | null;
+  businessAddress?: string | null;
+  businessPhone?: string | null;
+  businessEmail?: string | null;
+  accountingRequired?: boolean;
+  environment?: string | null;
   operatorName: string;
   saleNumber: string;
+  documentType: "INVOICE" | "NONE";
   documentNumber: string | null;
   createdAt: string;
   customerName: string;
+  customerIdentification?: string | null;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  customerAddress?: string | null;
   paymentMethodLabel: string;
   documentLabel: string;
+  authorizationNumber?: string | null;
+  accessKey?: string | null;
   subtotal: number;
+  discountTotal: number;
   taxTotal: number;
   total: number;
   lines: PosTicketLine[];
@@ -38,6 +53,30 @@ function formatMoney(value: number) {
   return value.toFixed(2);
 }
 
+function accountingRequiredLabel(value?: boolean) {
+  return value ? "SI" : "NO";
+}
+
+function environmentLabel(value?: string | null) {
+  return value === "PRODUCCION" ? "PRODUCCION" : "PRUEBAS";
+}
+
+function authorizationReference(data: PosTicketData) {
+  return data.authorizationNumber || data.accessKey || "";
+}
+
+function ticketFieldValue(value?: string | null) {
+  const normalized = value?.trim();
+  return normalized ? normalized : "-";
+}
+
+function ticketBusinessContact(data: PosTicketData) {
+  const values = [data.businessPhone?.trim(), data.businessEmail?.trim()].filter(
+    (value): value is string => Boolean(value),
+  );
+  return values.length > 0 ? values.join(" / ") : "-";
+}
+
 export function buildPosTicketHtml(
   data: PosTicketData,
   options: PosTicketHtmlOptions = {},
@@ -58,7 +97,7 @@ export function buildPosTicketHtml(
   <html lang="es">
     <head>
       <meta charset="utf-8" />
-      <title>Ticket ${escapeHtml(data.saleNumber)}</title>
+      <title>${escapeHtml(data.documentLabel)} ${escapeHtml(data.saleNumber)}</title>
       <style>
         :root {
           color-scheme: light;
@@ -88,9 +127,10 @@ export function buildPosTicketHtml(
         }
         h1 {
           margin: 0 0 3px;
-          font-size: 17px;
-          letter-spacing: 0.04em;
+          font-size: 15px;
+          letter-spacing: 0;
           text-transform: uppercase;
+          font-weight: 400;
         }
         p {
           margin: 2px 0;
@@ -112,7 +152,7 @@ export function buildPosTicketHtml(
           padding-left: 8px;
         }
         .item-name {
-          font-weight: 600;
+          font-weight: 400;
         }
         .item-meta {
           color: #6b7280;
@@ -120,11 +160,6 @@ export function buildPosTicketHtml(
         }
         .summary td {
           padding: 2px 0;
-        }
-        .summary tr:last-child td {
-          font-weight: 700;
-          font-size: 15px;
-          padding-top: 3px;
         }
         .print-actions {
           display: flex;
@@ -155,23 +190,46 @@ export function buildPosTicketHtml(
         ${
           autoPrint
             ? ""
-            : `<div class="print-actions"><button onclick="window.print()">Imprimir ticket</button></div>`
+            : `<div class="print-actions"><button onclick="window.print()">Imprimir comprobante</button></div>`
         }
         <div class="center">
-          <h1>${escapeHtml(data.businessName)}</h1>
-          <p class="muted">${escapeHtml(data.documentLabel)}</p>
+          <h1>${escapeHtml(data.businessLegalName || data.businessName)}</h1>
           ${
-            data.documentNumber
-              ? `<p><strong>Documento:</strong> ${escapeHtml(data.documentNumber)}</p>`
+            data.businessLegalName &&
+            data.businessName &&
+            data.businessLegalName !== data.businessName
+              ? `<p class="muted">${escapeHtml(data.businessName)}</p>`
               : ""
           }
-          <p>Venta #${escapeHtml(data.saleNumber)}</p>
+          <p class="muted">${escapeHtml(data.documentLabel)}</p>
+          <p>RUC: ${escapeHtml(ticketFieldValue(data.businessRuc))}</p>
+          <p>Direccion: ${escapeHtml(ticketFieldValue(data.businessAddress))}</p>
+          <p>Contacto: ${escapeHtml(ticketBusinessContact(data))}</p>
+          <p>Obligado a llevar contabilidad: ${escapeHtml(accountingRequiredLabel(data.accountingRequired))}</p>
+          ${
+            data.documentNumber
+              ? `<p>${data.documentType === "INVOICE" ? "FAC" : "COMP"} #: ${escapeHtml(data.documentNumber)}</p>`
+              : ""
+          }
+          ${
+            data.documentType === "INVOICE"
+              ? `<p>Ambiente: ${escapeHtml(environmentLabel(data.environment))}</p><p>Emision: NORMAL</p>`
+              : `<p>Venta #${escapeHtml(data.saleNumber)}</p>`
+          }
+          ${
+            data.documentType === "INVOICE"
+              ? `<p>No. de autorizacion: ${escapeHtml(ticketFieldValue(data.authorizationNumber))}</p><p>Clave de acceso: ${escapeHtml(ticketFieldValue(data.accessKey))}</p>`
+              : ""
+          }
         </div>
         <div class="divider"></div>
-        <p><strong>Fecha:</strong> ${escapeHtml(data.createdAt)}</p>
-        <p><strong>Operador:</strong> ${escapeHtml(data.operatorName)}</p>
-        <p><strong>Cliente:</strong> ${escapeHtml(data.customerName)}</p>
-        <p><strong>Pago:</strong> ${escapeHtml(data.paymentMethodLabel)}</p>
+        <p>Cajero: ${escapeHtml(data.operatorName)}</p>
+        <p>Fecha: ${escapeHtml(data.createdAt)}</p>
+        <p>Cliente: ${escapeHtml(data.customerName)}</p>
+        <p>Cedula/RUC: ${escapeHtml(ticketFieldValue(data.customerIdentification))}</p>
+        <p>Email: ${escapeHtml(ticketFieldValue(data.customerEmail))}</p>
+        <p>Telefono: ${escapeHtml(ticketFieldValue(data.customerPhone))}</p>
+        <p>Direccion: ${escapeHtml(ticketFieldValue(data.customerAddress))}</p>
         <div class="divider"></div>
         <table>
           <tbody>
@@ -182,12 +240,13 @@ export function buildPosTicketHtml(
         <table class="summary">
           <tbody>
             <tr><td>Subtotal</td><td class="right">$${formatMoney(data.subtotal)}</td></tr>
+            <tr><td>Dcto</td><td class="right">$${formatMoney(data.discountTotal)}</td></tr>
             <tr><td>IVA</td><td class="right">$${formatMoney(data.taxTotal)}</td></tr>
             <tr><td>Total</td><td class="right">$${formatMoney(data.total)}</td></tr>
           </tbody>
         </table>
         <div class="divider"></div>
-        <p class="center muted">Gracias por su compra</p>
+        <p>Forma de pago: ${escapeHtml(data.paymentMethodLabel)}</p>
       </main>
     </body>
   </html>`;

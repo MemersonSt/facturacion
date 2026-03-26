@@ -31,7 +31,6 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { startTransition, useEffect, useMemo, useState, useTransition } from "react";
 
-import { buildPosTicketHtml, type PosTicketData } from "@/lib/pos-ticket-template";
 import { fetchJson } from "@/shared/dashboard/api";
 import { PAYMENT_METHODS } from "@/shared/dashboard/types";
 
@@ -162,21 +161,6 @@ function documentTone(key: string) {
 
 type SalesRow = SalesReportResponse["salesRows"][number];
 
-function printHtmlDocument(html: string) {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const blobUrl = URL.createObjectURL(blob);
-  const printWindow = window.open(blobUrl, "_blank", "width=420,height=720");
-
-  if (!printWindow) {
-    URL.revokeObjectURL(blobUrl);
-    throw new Error("El navegador bloqueo la ventana de impresion");
-  }
-
-  window.setTimeout(() => {
-    URL.revokeObjectURL(blobUrl);
-  }, 60_000);
-}
-
 export function SalesReportsPage() {
   const theme = useTheme();
   const router = useRouter();
@@ -258,28 +242,6 @@ export function SalesReportsPage() {
     });
   }, [report, search]);
 
-  function buildTicketData(detail: SaleReportDetailResponse): PosTicketData {
-    return {
-      businessName: detail.businessName,
-      operatorName: detail.sellerName,
-      saleNumber: detail.saleNumber,
-      documentNumber: detail.documentNumber,
-      createdAt: formatDateTime(detail.createdAt),
-      customerName: detail.customerName,
-      paymentMethodLabel: detail.paymentMethods.map(paymentMethodLabel).join(" / "),
-      documentLabel: detail.documentLabel,
-      subtotal: detail.subtotal,
-      taxTotal: detail.taxTotal,
-      total: detail.total,
-      lines: detail.lines.map((line) => ({
-        quantity: line.quantity,
-        name: `${line.productCode} · ${line.productName}`,
-        unitPrice: line.unitPrice,
-        total: line.total,
-      })),
-    };
-  }
-
   async function fetchSaleDetail(saleId: string) {
     return fetchJson<SaleReportDetailResponse>(`/api/v1/reports/sales/${saleId}`);
   }
@@ -306,17 +268,15 @@ export function SalesReportsPage() {
 
   async function printSaleById(saleId: string) {
     try {
-      const detail =
-        selectedSaleDetail?.saleId === saleId
-          ? selectedSaleDetail
-          : await fetchSaleDetail(saleId);
-      const ticketData = buildTicketData(detail);
-      printHtmlDocument(
-        buildPosTicketHtml(ticketData, {
-          autoPrint: false,
-          autoClose: false,
-        }),
+      const printWindow = window.open(
+        `/api/v1/sales/${saleId}/print`,
+        "_blank",
+        "noopener,noreferrer",
       );
+
+      if (!printWindow) {
+        throw new Error("El navegador bloqueo la ventana de impresion");
+      }
     } catch (printError) {
       setError(
         printError instanceof Error
@@ -502,9 +462,17 @@ export function SalesReportsPage() {
       params.delete("sellerId");
     }
 
-    startRoutingTransition(() => {
-      router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname);
-    });
+    /*
+      startRoutingTransition(() => {
+        router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname);
+      });
+    */
+
+    //cambio realizado 
+    //actualiza la fecha de reporte automaticamente sin actualizar la pagina
+    const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+
+    router.replace(newUrl);
   }
 
   function resetFilters() {
@@ -517,16 +485,26 @@ export function SalesReportsPage() {
 
   return (
     <Stack spacing={2.5} sx={{ px: { xs: 1, sm: 2 }, py: { xs: 1, sm: 2 } }}>
-      <Stack spacing={0.75}>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: "-0.03em" }}>
-          Reporte de ventas
-        </Typography>
-        <Typography sx={{ maxWidth: 760, color: "text.secondary" }}>
+      <Box sx={{ px: { xs: 1, sm: 2 }, pt: { xs: 1, sm: 2 } }}>
+        <Stack spacing={0.75}>
+          <Typography
+            variant="h5"
+            sx={{ color: "#4a3c58", fontWeight: 700, lineHeight: 1.15 }}
+          >
+            Reporte de ventas
+          </Typography>
+          <Typography
+            sx={{
+              maxWidth: 720,
+              color: "rgba(74, 60, 88, 0.68)",
+              fontSize: 14,
+            }}
+          >
           Consulta ventas registro por registro y usa los filtros para encontrar
           exactamente lo que necesitas revisar.
-        </Typography>
-      </Stack>
-
+          </Typography>
+        </Stack>
+      </Box>
       <Paper
         component="form"
         onSubmit={applyFilters}

@@ -2,11 +2,28 @@ import { BusinessFeatureKey, Prisma } from "@prisma/client";
 
 import {
   DEFAULT_POS_FEATURE_CONFIG,
+  parsePosFeatureBlueprint,
   parsePosFeatureConfig,
-  serializePosFeatureConfig,
+  serializePosFeatureConfigWithBlueprint,
+  serializePosFeatureConfigWithBlueprintAndCash,
 } from "@/core/business/feature-config";
+import type { BusinessBlueprint } from "@/core/platform/business-blueprint";
+import { mergeBusinessBlueprint, parseBusinessBlueprint, serializeBusinessBlueprint } from "@/core/platform/blueprint-config";
+import {
+  mapLegacyBusinessBlueprint,
+} from "@/core/platform/legacy-mappers";
 import { prisma } from "@/lib/prisma";
 import type { UpdateBusinessSettingsInput } from "@/core/business/schemas";
+import {
+  DEFAULT_POS_POLICY_EDITOR,
+  editorValueToPosBlueprint,
+  legacyPosFlagsToPolicyEditorValue,
+  posPolicyToLegacyFlags,
+} from "@/modules/pos/policies/pos-policy-editor";
+import {
+  DEFAULT_CASH_POLICY_EDITOR,
+  cashPolicyToBlueprint,
+} from "@/modules/cash-management/policies/cash-policy-editor";
 
 export const DEFAULT_BUSINESS_SLUG = "default";
 const DEFAULT_DOCUMENT_ISSUER_CODE = "MAIN";
@@ -26,6 +43,7 @@ const DEFAULT_BUSINESS_SELECT = {
   email: true,
   address: true,
   slug: true,
+  blueprintConfig: true,
   features: {
     select: {
       key: true,
@@ -76,6 +94,8 @@ export type BusinessContext = Prisma.BusinessGetPayload<{
   select: typeof DEFAULT_BUSINESS_SELECT;
 }> & {
   enabledFeatures: BusinessFeatureKey[];
+  blueprint: BusinessBlueprint;
+  // Legacy compatibility snapshot kept while historical configs still exist.
   posSettings: {
     trackInventoryOnSale: boolean;
     useButcheryScaleBarcodeWeight: boolean;
@@ -176,11 +196,34 @@ function toBusinessContext(
   business: Prisma.BusinessGetPayload<{ select: typeof DEFAULT_BUSINESS_SELECT }>,
 ): BusinessContext {
   const posFeature = business.features.find((feature) => feature.key === "POS");
+  const posSettings = parsePosFeatureConfig(posFeature?.config);
+
+  // Fuente de verdad canónica: blueprintConfig en Business.
+  // Si existe, es la autoridad. El sistema legado actúa sólo como fallback.
+  if (business.blueprintConfig) {
+    const canonicalBlueprint = parseBusinessBlueprint(business.blueprintConfig);
+    return {
+      ...business,
+      enabledFeatures: toEnabledFeatures(business.features),
+      blueprint: canonicalBlueprint,
+      posSettings,
+    };
+  }
+
+  // --- Fallback: sistema legado (BusinessFeature + POS config JSON) ---
+  const legacyBlueprint = mapLegacyBusinessBlueprint({
+    features: business.features,
+    posSettings,
+  });
+  const persistedPosBlueprint = parsePosFeatureBlueprint(posFeature?.config);
 
   return {
     ...business,
     enabledFeatures: toEnabledFeatures(business.features),
-    posSettings: parsePosFeatureConfig(posFeature?.config),
+    blueprint: persistedPosBlueprint
+      ? mergeBusinessBlueprint(legacyBlueprint, persistedPosBlueprint)
+      : legacyBlueprint,
+    posSettings,
   };
 }
 
@@ -223,7 +266,12 @@ export async function ensureDefaultBusiness() {
           enabled,
           ...(key === "POS"
             ? {
-                config: serializePosFeatureConfig(DEFAULT_POS_FEATURE_CONFIG),
+                config: serializePosFeatureConfigWithBlueprint(
+                  DEFAULT_POS_FEATURE_CONFIG,
+                  editorValueToPosBlueprint(DEFAULT_POS_POLICY_EDITOR, {
+                    enabled,
+                  }),
+                ),
               }
             : {}),
         },
@@ -300,6 +348,40 @@ export async function updateBusinessSettings(
   businessId: string,
   input: UpdateBusinessSettingsInput,
 ) {
+  const existingPosFeature = await prisma.businessFeature.findUnique({
+    where: {
+      businessId_key: {
+        businessId,
+        key: "POS",
+      },
+    },
+    select: {
+      enabled: true,
+    },
+  });
+  const posEnabled = existingPosFeature?.enabled ?? DEFAULT_FEATURE_STATE.POS;
+  const nextPosPolicy =
+    input.posPolicy ??
+    legacyPosFlagsToPolicyEditorValue({
+      trackInventoryOnSale: input.trackInventoryOnSale,
+      useButcheryScaleBarcodeWeight: input.useButcheryScaleBarcodeWeight,
+    });
+  const nextPosLegacyFlags = posPolicyToLegacyFlags(nextPosPolicy);
+  const nextPosBlueprint = editorValueToPosBlueprint(nextPosPolicy, {
+    enabled: posEnabled,
+  });
+  const nextCashPolicy = input.cashPolicy ?? DEFAULT_CASH_POLICY_EDITOR;
+
+  // Blueprint canónico: combina POS + Cash Management.
+  // Se persiste en Business.blueprintConfig — fuente de verdad del composition system.
+  const cashFragment = cashPolicyToBlueprint(nextCashPolicy);
+  const canonicalBlueprint = mergeBusinessBlueprint(nextPosBlueprint, {
+    modules: cashFragment.modules,
+    edition: nextPosBlueprint.edition,
+    policyPacks: [],
+    capabilities: cashFragment.capabilities,
+  });
+
   const business = await prisma.business.update({
     where: { id: businessId },
     data: {
@@ -309,6 +391,7 @@ export async function updateBusinessSettings(
       phone: input.phone || null,
       email: input.email || null,
       address: input.address || null,
+      blueprintConfig: serializeBusinessBlueprint(canonicalBlueprint),
       taxProfile: {
         upsert: {
           update: {
@@ -399,19 +482,23 @@ export async function updateBusinessSettings(
       },
     },
     update: {
-      config: serializePosFeatureConfig({
-        trackInventoryOnSale: input.trackInventoryOnSale,
-        useButcheryScaleBarcodeWeight: input.useButcheryScaleBarcodeWeight,
-      }),
+      config: serializePosFeatureConfigWithBlueprintAndCash(
+        nextPosLegacyFlags,
+        nextPosBlueprint,
+        nextCashPolicy,
+      ),
     },
     create: {
       businessId,
       key: "POS",
       enabled: DEFAULT_FEATURE_STATE.POS,
-      config: serializePosFeatureConfig({
-        trackInventoryOnSale: input.trackInventoryOnSale,
-        useButcheryScaleBarcodeWeight: input.useButcheryScaleBarcodeWeight,
-      }),
+      config: serializePosFeatureConfigWithBlueprintAndCash(
+        nextPosLegacyFlags,
+        editorValueToPosBlueprint(nextPosPolicy, {
+          enabled: DEFAULT_FEATURE_STATE.POS,
+        }),
+        nextCashPolicy,
+      ),
     },
   });
 

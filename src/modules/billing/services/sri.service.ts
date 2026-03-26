@@ -1,7 +1,19 @@
-import { Prisma, SaleStatus, SriInvoiceStatus } from "@prisma/client";
+import {
+  Prisma,
+  SaleDocumentStatus,
+  SaleStatus,
+  SriInvoiceStatus,
+} from "@prisma/client";
 
+import { createLogger, startTimer, timerDurationMs } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
-import { createInvoice } from "@/modules/billing/services/sri.client";
+import {
+  createInvoice,
+  SriHttpError,
+} from "@/modules/billing/services/sri.client";
+import { preparePendingSaleDocumentAuthorizationBySriInvoiceId } from "@/modules/billing/services/sale-document-preparation.service";
+
+const logger = createLogger("SRIService");
 
 export async function logIntegration(params: {
   operation: "CREATE" | "AUTHORIZE" | "RETRY";
@@ -26,77 +38,169 @@ export async function logIntegration(params: {
   });
 }
 
+function toLocalSriInvoiceStatus(remoteStatus: string | null | undefined) {
+  if (remoteStatus === "AUTHORIZED") {
+    return SriInvoiceStatus.AUTHORIZED;
+  }
+
+  if (remoteStatus === "ERROR") {
+    return SriInvoiceStatus.ERROR;
+  }
+
+  if (remoteStatus === "DRAFT") {
+    return SriInvoiceStatus.DRAFT;
+  }
+
+  return SriInvoiceStatus.PENDING_SRI;
+}
+
+function toLocalSaleDocumentStatus(invoiceStatus: SriInvoiceStatus) {
+  if (invoiceStatus === SriInvoiceStatus.AUTHORIZED) {
+    return SaleDocumentStatus.ISSUED;
+  }
+
+  if (invoiceStatus === SriInvoiceStatus.ERROR) {
+    return SaleDocumentStatus.ERROR;
+  }
+
+  return SaleDocumentStatus.PENDING;
+}
+
+async function syncSaleDocumentStatusBySriInvoiceId(
+  sriInvoiceId: string,
+  invoiceStatus: SriInvoiceStatus,
+  authorizedAt: Date | null,
+) {
+  await prisma.saleDocument.updateMany({
+    where: { sriInvoiceId },
+    data: {
+      status: toLocalSaleDocumentStatus(invoiceStatus),
+      issuedAt: invoiceStatus === SriInvoiceStatus.AUTHORIZED ? authorizedAt : null,
+    },
+  });
+}
+
 export async function pushAndAuthorizeInvoice(sriInvoiceId: string, payload: unknown) {
+  const startedAt = startTimer();
+  logger.info("invoice:issue:start", {
+    sriInvoiceId,
+    payload,
+  });
+
   try {
-    const serviceResp = await createInvoice(payload);
+    const issued = await createInvoice(payload);
+    logger.info("invoice:issue:response", {
+      sriInvoiceId,
+      response: issued,
+    });
+    const localStatus = toLocalSriInvoiceStatus(issued.status);
+    const authorizedAt = issued.authorizedAt ? new Date(issued.authorizedAt) : null;
 
     await logIntegration({
       operation: "CREATE",
       requestPayload: payload,
-      responsePayload: serviceResp,
-      success: serviceResp.success,
+      responsePayload: issued,
+      success: localStatus !== SriInvoiceStatus.ERROR,
       httpStatus: 200,
     });
-
-    if (!serviceResp.success) {
-      await prisma.sriInvoice.update({
-        where: { id: sriInvoiceId },
-        data: {
-          status: SriInvoiceStatus.PENDING_SRI,
-          lastError: "El servicio SRI devolvio success=false en create",
-        },
-      });
-      return;
-    }
-
-    const issued = serviceResp.data;
-    const issuedOk = issued.status === "AUTHORIZED";
 
     await prisma.sriInvoice.update({
       where: { id: sriInvoiceId },
       data: {
         externalInvoiceId: issued.id ?? undefined,
         secuencial: issued.secuencial ?? undefined,
-        status: issuedOk
-          ? SriInvoiceStatus.AUTHORIZED
-          : issued.status === "ERROR"
-            ? SriInvoiceStatus.ERROR
-          : issued.status === "DRAFT"
-            ? SriInvoiceStatus.DRAFT
-            : SriInvoiceStatus.PENDING_SRI,
+        status: localStatus,
         claveAcceso: issued.claveAcceso ?? undefined,
         sriReceptionStatus: issued.sriReceptionStatus ?? undefined,
         sriAuthorizationStatus: issued.sriAuthorizationStatus ?? undefined,
         authorizationNumber: issued.authorizationNumber ?? undefined,
-        authorizedAt: issued.authorizedAt ? new Date(issued.authorizedAt) : null,
-        createResponsePayload: serviceResp as Prisma.InputJsonValue,
-        authorizeResponsePayload: serviceResp as Prisma.InputJsonValue,
+        authorizedAt,
+        createResponsePayload: issued as Prisma.InputJsonValue,
         lastError: issued.lastError ?? undefined,
       },
     });
 
-    if (issued.xmlUrl || issued.rideUrl) {
+    logger.info("invoice:issue:stored", {
+      sriInvoiceId,
+      externalInvoiceId: issued.id ?? null,
+      remoteStatus: issued.status,
+      localStatus,
+      claveAcceso: issued.claveAcceso ?? null,
+      authorizationNumber: issued.authorizationNumber ?? null,
+      durationMs: timerDurationMs(startedAt),
+    });
+
+    await syncSaleDocumentStatusBySriInvoiceId(
+      sriInvoiceId,
+      localStatus,
+      authorizedAt,
+    );
+
+    logger.info("invoice:issue:sale-document-synced", {
+      sriInvoiceId,
+      saleDocumentStatus: toLocalSaleDocumentStatus(localStatus),
+      authorizedAt: authorizedAt?.toISOString() ?? null,
+      durationMs: timerDurationMs(startedAt),
+    });
+
+    if (
+      issued.artifacts?.signedXmlUrl ||
+      issued.artifacts?.authorizedXmlUrl
+    ) {
       await prisma.sriInvoiceDocument.upsert({
         where: { sriInvoiceId },
         update: {
-          xmlAuthorizedPath: issued.xmlUrl ?? undefined,
-          ridePdfPath: issued.rideUrl ?? undefined,
+          xmlSignedPath: issued.artifacts?.signedXmlUrl ?? undefined,
+          xmlAuthorizedPath: issued.artifacts?.authorizedXmlUrl ?? undefined,
           storageProvider: "remote",
         },
         create: {
           sriInvoiceId,
-          xmlAuthorizedPath: issued.xmlUrl ?? undefined,
-          ridePdfPath: issued.rideUrl ?? undefined,
+          xmlSignedPath: issued.artifacts?.signedXmlUrl ?? undefined,
+          xmlAuthorizedPath: issued.artifacts?.authorizedXmlUrl ?? undefined,
           storageProvider: "remote",
         },
       });
+
+      logger.info("invoice:issue:artifacts-synced", {
+        sriInvoiceId,
+        signedXmlUrl: issued.artifacts?.signedXmlUrl ?? null,
+        authorizedXmlUrl: issued.artifacts?.authorizedXmlUrl ?? null,
+        durationMs: timerDurationMs(startedAt),
+      });
     }
+
+    if (localStatus !== SriInvoiceStatus.AUTHORIZED) {
+      logger.warn("invoice:issue:pending-or-error", {
+        sriInvoiceId,
+        remoteStatus: issued.status,
+        localStatus,
+        lastError: issued.lastError ?? null,
+        sriReceptionStatus: issued.sriReceptionStatus ?? null,
+        sriAuthorizationStatus: issued.sriAuthorizationStatus ?? null,
+        durationMs: timerDurationMs(startedAt),
+      });
+      return;
+    }
+
+    logger.info("invoice:issue:authorized", {
+      sriInvoiceId,
+      externalInvoiceId: issued.id ?? null,
+      authorizationNumber: issued.authorizationNumber ?? null,
+      authorizedAt: authorizedAt?.toISOString() ?? null,
+      durationMs: timerDurationMs(startedAt),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error desconocido en servicio SRI";
+    const httpStatus = error instanceof SriHttpError ? error.statusCode ?? undefined : undefined;
+    const responseBody =
+      error instanceof SriHttpError ? error.responseBody : undefined;
 
     await logIntegration({
       operation: "CREATE",
       requestPayload: payload,
+      responsePayload: responseBody,
+      httpStatus,
       success: false,
       errorMessage: message,
     });
@@ -109,10 +213,19 @@ export async function pushAndAuthorizeInvoice(sriInvoiceId: string, payload: unk
         lastError: message,
       },
     });
+
+    logger.error("invoice:issue:failed", {
+      sriInvoiceId,
+      message,
+      httpStatus: httpStatus ?? null,
+      responseBody: responseBody ?? null,
+      durationMs: timerDurationMs(startedAt),
+    });
   }
 }
 
 export async function retrySriInvoiceAuthorization(sriInvoiceId: string) {
+  const startedAt = startTimer();
   const invoice = await prisma.sriInvoice.findUnique({
     where: { id: sriInvoiceId },
     include: {
@@ -128,66 +241,158 @@ export async function retrySriInvoiceAuthorization(sriInvoiceId: string) {
     throw new Error("Factura local no encontrada");
   }
 
-  if (!invoice.createRequestPayload) {
-    throw new Error("La factura no tiene payload guardado para reintento");
-  }
+  const hasStoredPayload =
+    invoice.createRequestPayload &&
+    typeof invoice.createRequestPayload === "object" &&
+    !Array.isArray(invoice.createRequestPayload) &&
+    Object.keys(invoice.createRequestPayload).length > 0;
+
+  const createRequestPayload = hasStoredPayload
+    ? invoice.createRequestPayload
+    : (
+        await preparePendingSaleDocumentAuthorizationBySriInvoiceId(
+          sriInvoiceId,
+        )
+      ).invoicePayload;
 
   if (invoice.sale.status === SaleStatus.CANCELLED) {
     throw new Error("No se puede reintentar una factura de una venta anulada");
   }
 
+  logger.info("invoice:retry:start", {
+    sriInvoiceId,
+    claveAcceso: invoice.claveAcceso ?? null,
+  });
+
   try {
-    const response = await createInvoice(invoice.createRequestPayload);
+    const response = await createInvoice(createRequestPayload);
+    const localStatus = toLocalSriInvoiceStatus(response.status);
+    const authorizedAt = response.authorizedAt
+      ? new Date(response.authorizedAt)
+      : null;
 
     await logIntegration({
       operation: "RETRY",
-      requestPayload: invoice.createRequestPayload,
+      requestPayload: createRequestPayload,
       responsePayload: response,
-      success: response.success,
+      success: localStatus !== SriInvoiceStatus.ERROR,
       httpStatus: 200,
     });
-
-    if (!response.success) {
-      return prisma.sriInvoice.update({
-        where: { id: sriInvoiceId },
-        data: {
-          status: SriInvoiceStatus.PENDING_SRI,
-          retryCount: { increment: 1 },
-          lastError: "Reintento devolvio success=false",
-          authorizeResponsePayload: response as Prisma.InputJsonValue,
-        },
-      });
-    }
-
-    const data = response.data;
-    const isAuthorized = data.status === "AUTHORIZED";
-
-    return prisma.sriInvoice.update({
+    const updatedInvoice = await prisma.sriInvoice.update({
       where: { id: sriInvoiceId },
       data: {
-        externalInvoiceId: data.id ?? undefined,
-        status: isAuthorized ? SriInvoiceStatus.AUTHORIZED : SriInvoiceStatus.PENDING_SRI,
-        claveAcceso: data.claveAcceso ?? undefined,
-        sriReceptionStatus: data.sriReceptionStatus ?? undefined,
-        sriAuthorizationStatus: data.sriAuthorizationStatus ?? undefined,
-        authorizationNumber: data.authorizationNumber ?? undefined,
-        authorizedAt: data.authorizedAt ? new Date(data.authorizedAt) : null,
+        externalInvoiceId: response.id ?? undefined,
+        secuencial: response.secuencial ?? undefined,
+        status: localStatus,
+        claveAcceso: response.claveAcceso ?? undefined,
+        sriReceptionStatus: response.sriReceptionStatus ?? undefined,
+        sriAuthorizationStatus: response.sriAuthorizationStatus ?? undefined,
+        authorizationNumber: response.authorizationNumber ?? undefined,
+        authorizedAt,
         retryCount: { increment: 1 },
-        lastError: data.lastError ?? undefined,
+        lastError: response.lastError ?? undefined,
         authorizeResponsePayload: response as Prisma.InputJsonValue,
       },
       include: {
         documents: true,
       },
     });
+
+    logger.info("invoice:retry:stored", {
+      sriInvoiceId,
+      externalInvoiceId: response.id ?? null,
+      remoteStatus: response.status,
+      localStatus,
+      claveAcceso: response.claveAcceso ?? null,
+      authorizationNumber: response.authorizationNumber ?? null,
+      retryCount: updatedInvoice.retryCount,
+      durationMs: timerDurationMs(startedAt),
+    });
+
+    await syncSaleDocumentStatusBySriInvoiceId(
+      sriInvoiceId,
+      localStatus,
+      authorizedAt,
+    );
+
+    logger.info("invoice:retry:sale-document-synced", {
+      sriInvoiceId,
+      saleDocumentStatus: toLocalSaleDocumentStatus(localStatus),
+      authorizedAt: authorizedAt?.toISOString() ?? null,
+      durationMs: timerDurationMs(startedAt),
+    });
+
+    if (
+      response.artifacts?.signedXmlUrl ||
+      response.artifacts?.authorizedXmlUrl
+    ) {
+      await prisma.sriInvoiceDocument.upsert({
+        where: { sriInvoiceId },
+        update: {
+          xmlSignedPath: response.artifacts?.signedXmlUrl ?? undefined,
+          xmlAuthorizedPath: response.artifacts?.authorizedXmlUrl ?? undefined,
+          storageProvider: "remote",
+        },
+        create: {
+          sriInvoiceId,
+          xmlSignedPath: response.artifacts?.signedXmlUrl ?? undefined,
+          xmlAuthorizedPath: response.artifacts?.authorizedXmlUrl ?? undefined,
+          storageProvider: "remote",
+        },
+      });
+
+      logger.info("invoice:retry:artifacts-synced", {
+        sriInvoiceId,
+        signedXmlUrl: response.artifacts?.signedXmlUrl ?? null,
+        authorizedXmlUrl: response.artifacts?.authorizedXmlUrl ?? null,
+        durationMs: timerDurationMs(startedAt),
+      });
+    }
+
+    if (localStatus !== SriInvoiceStatus.AUTHORIZED) {
+      logger.warn("invoice:retry:pending-or-error", {
+        sriInvoiceId,
+        remoteStatus: response.status,
+        localStatus,
+        lastError: response.lastError ?? null,
+        sriReceptionStatus: response.sriReceptionStatus ?? null,
+        sriAuthorizationStatus: response.sriAuthorizationStatus ?? null,
+        durationMs: timerDurationMs(startedAt),
+      });
+      return updatedInvoice;
+    }
+
+    logger.info("invoice:retry:authorized", {
+      sriInvoiceId,
+      externalInvoiceId: response.id ?? null,
+      authorizationNumber: response.authorizationNumber ?? null,
+      authorizedAt: authorizedAt?.toISOString() ?? null,
+      retryCount: updatedInvoice.retryCount,
+      durationMs: timerDurationMs(startedAt),
+    });
+
+    return updatedInvoice;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error de reintento";
+    const httpStatus = error instanceof SriHttpError ? error.statusCode ?? undefined : undefined;
+    const responseBody =
+      error instanceof SriHttpError ? error.responseBody : undefined;
 
     await logIntegration({
       operation: "RETRY",
-      requestPayload: invoice.createRequestPayload,
+      requestPayload: createRequestPayload,
+      responsePayload: responseBody,
+      httpStatus,
       success: false,
       errorMessage: message,
+    });
+
+    logger.error("invoice:retry:failed", {
+      sriInvoiceId,
+      message,
+      httpStatus: httpStatus ?? null,
+      responseBody: responseBody ?? null,
+      durationMs: timerDurationMs(startedAt),
     });
 
     return prisma.sriInvoice.update({

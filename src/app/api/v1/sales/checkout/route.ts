@@ -1,13 +1,11 @@
-import { after } from "next/server";
 import { z } from "zod";
 
-import { ensureDefaultBusiness, getBusinessContextById, hasBusinessFeature } from "@/core/business/business.service";
-import {
-  authorizePendingSaleDocument,
-  checkout,
-} from "@/core/sales/checkout.service";
+import { ensureDefaultBusiness, getBusinessContextById } from "@/core/business/business.service";
 import { getSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
+import { resolveBillingRuntime } from "@/modules/billing/policies/resolve-billing-runtime";
+import { resolvePosRuntime } from "@/modules/pos/policies/resolve-pos-runtime";
+import { runDirectSaleCheckout } from "@/modules/sales/services/direct-sale-checkout.service";
 
 export async function POST(request: Request) {
   try {
@@ -22,24 +20,23 @@ export async function POST(request: Request) {
       ...payload,
       createdById: typeof payload?.createdById === "string" ? payload.createdById : session.sub,
     };
-    const billingEnabled = hasBusinessFeature(session.features, "BILLING");
+    const billingRuntime = resolveBillingRuntime({
+      blueprint: business.blueprint,
+      taxProfile: business.taxProfile,
+    });
+    const posRuntime = resolvePosRuntime({
+      blueprint: business.blueprint,
+    });
 
-    if (!billingEnabled || !business.taxProfile?.requiresElectronicBilling) {
+    if (!billingRuntime.capabilities.electronicBilling) {
       normalizedPayload.documentType = "NONE";
     }
 
-    const result = await checkout(normalizedPayload, {
-      inventoryTrackingEnabled: business.posSettings.trackInventoryOnSale,
+    const result = await runDirectSaleCheckout(normalizedPayload, {
+      inventoryTrackingEnabled: posRuntime.operationalRules.trackInventoryOnSale,
     });
-    const { backgroundDocumentTask, ...response } = result;
 
-    if (backgroundDocumentTask) {
-      after(async () => {
-        await authorizePendingSaleDocument(backgroundDocumentTask);
-      });
-    }
-
-    return ok(response, { status: 201 });
+    return ok(result, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return fail("Payload invalido", 400, error.flatten());

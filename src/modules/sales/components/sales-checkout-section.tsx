@@ -36,13 +36,14 @@ export type SalesCheckoutSectionProps = {
   checkoutTotal: number;
   selectedIdentificationType?: IdentificationTypeOption;
   selectedPaymentMethod?: PaymentMethodOption;
-  canPrintDocuments: boolean;
+  canPrintPdf: boolean;
+  canPrintXml: boolean;
   canPrintQuote: boolean;
   canResetCheckout: boolean;
   saving: boolean;
   savingQuote: boolean;
   editingQuoteId: string | null;
-  onPrintRide: () => void;
+  onPrintPdf: () => void;
   onPrintXml: () => void;
   onPrintQuote?: () => void;
   onCancelEdit?: () => void;
@@ -66,13 +67,14 @@ export function SalesCheckoutSection({
   checkoutTotal,
   selectedIdentificationType,
   selectedPaymentMethod,
-  canPrintDocuments,
+  canPrintPdf,
+  canPrintXml,
   canPrintQuote,
   canResetCheckout,
   saving,
   savingQuote,
   editingQuoteId,
-  onPrintRide,
+  onPrintPdf,
   onPrintXml,
   onPrintQuote,
   onCancelEdit,
@@ -181,15 +183,15 @@ export function SalesCheckoutSection({
                       <Button
                         type="button"
                         variant="outline"
-                        disabled={!canPrintDocuments}
-                        onClick={onPrintRide}
+                        disabled={!canPrintPdf}
+                        onClick={onPrintPdf}
                       >
-                        Descargar PDF
+                        Imprimir / Guardar PDF
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
-                        disabled={!canPrintDocuments}
+                        disabled={!canPrintXml}
                         onClick={onPrintXml}
                       >
                         Descargar XML
@@ -215,10 +217,14 @@ export function SalesCheckoutSection({
                     </span>
                   ) : null}
                 </div>
-                {!isQuoteMode && !canPrintDocuments ? (
+                {!isQuoteMode && !canPrintPdf ? (
                   <p className="text-xs text-[#4a3c58]/50">
-                    Los documentos de impresion se habilitan cuando la factura
-                    este autorizada.
+                    La impresion se habilita cuando la venta queda registrada.
+                  </p>
+                ) : !isQuoteMode && canPrintPdf && !canPrintXml ? (
+                  <p className="text-xs text-[#4a3c58]/50">
+                    La impresion local ya esta disponible. El XML se habilita
+                    cuando la factura este autorizada.
                   </p>
                 ) : isQuoteMode && !canPrintQuote ? (
                   <p className="text-xs text-[#4a3c58]/50">

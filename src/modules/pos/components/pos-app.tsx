@@ -53,22 +53,35 @@ import {
   type MouseEvent,
   type SyntheticEvent,
 } from "react";
-import { alpha, type SxProps, type Theme, useTheme } from "@mui/material/styles";
+import {
+  alpha,
+  type SxProps,
+  type Theme,
+  useTheme,
+} from "@mui/material/styles";
 
 import {
   buildPosTicketHtml,
   type PosTicketData,
 } from "@/lib/pos-ticket-template";
+import {
+  buildCashCloseTicketHtml,
+  type CashCloseTicketData,
+} from "@/lib/cash-close-ticket-template";
 import { createLogger, startTimer, timerDurationMs } from "@/lib/logger";
 import {
   extractScaleBarcodeWeight,
   findBestScaleBarcodeMatch,
   matchesScaleBarcodePrefix,
   roundMoney,
+  resolveScaleBarcodeReference,
 } from "@/lib/utils";
 import { PosCashSessionDialog } from "@/modules/pos/components/pos-cash-session-dialog";
 import { PosHeldSalesDialog } from "@/modules/pos/components/pos-held-sales-dialog";
 import { useLocalPrintSocket } from "@/modules/pos/hooks/use-local-print-socket";
+import type { BillingRuntime } from "@/modules/billing/policies/billing-runtime";
+import type { PosRuntime } from "@/modules/pos/policies/pos-runtime";
+import type { CashRuntime } from "@/modules/cash-management/policies/cash-runtime";
 import { fetchJson } from "@/shared/dashboard/api";
 import {
   IDENTIFICATION_TYPES,
@@ -78,6 +91,7 @@ import {
   type Product,
 } from "@/shared/dashboard/types";
 import { buildPosTicketEscPos } from "@/lib/pos-ticket-pdf";
+import { buildCashCloseTicketEscPos } from "@/lib/cash-close-ticket-pdf";
 
 type PosAppProps = {
   initialSession: {
@@ -92,14 +106,21 @@ type PosDocumentType = "NONE" | "INVOICE";
 
 type PosCashSession = {
   id: string;
-  status: "OPEN" | "CLOSED";
+  status: "OPEN" | "CLOSED" | "PENDING_APPROVAL";
   openingAmount: number;
-  closingAmount: number | null;
   notes: string | null;
   openedAt: string;
   closedAt: string | null;
-  salesCount: number;
-  salesTotal: number;
+  // Legacy fields (PosCashSession)
+  closingAmount?: number | null;
+  salesCount?: number;
+  salesTotal?: number;
+  // New Cash Management fields (CashSession)
+  declaredClosing?: number | null;
+  expectedClosing?: number | null;
+  difference?: number | null;
+  salesCashTotal?: number;
+  movementsTotal?: number;
 };
 
 type PosHeldSalePayload = {
@@ -133,15 +154,20 @@ export type PosBootstrap = {
   business: {
     id: string;
     name: string;
+    legalName?: string | null;
+    ruc?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
   };
   operator: {
     id: string;
     name: string;
     role: "ADMIN" | "SELLER";
   };
-  billingEnabled: boolean;
-  inventoryTrackingEnabled: boolean;
-  useButcheryScaleBarcodeWeight: boolean;
+  billingRuntime: BillingRuntime;
+  posRuntime: PosRuntime;
+  cashRuntime?: CashRuntime;
   defaultDocumentType: PosDocumentType;
   defaultIssuerId: string;
   cashSession: PosCashSession | null;
@@ -152,8 +178,18 @@ export type PosBootstrap = {
 
 type CheckoutResponse = {
   saleNumber: string;
+  business?: {
+    id: string;
+    name: string;
+    legalName?: string | null;
+    ruc?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  };
   totals: {
     subtotal: number;
+    discountTotal: number;
     taxTotal: number;
     total: number;
   };
@@ -170,6 +206,8 @@ type CheckoutResponse = {
   invoice: {
     sriInvoiceId: string;
     status: "DRAFT" | "AUTHORIZED" | "PENDING_SRI" | "ERROR";
+    authorizationNumber: string | null;
+    claveAcceso: string | null;
   } | null;
 };
 
@@ -331,7 +369,9 @@ function PosDecimalInput({
 
         if (event.key === "Escape") {
           event.preventDefault();
-          setDraft(formatDecimalInput(value, fractionDigits, trimTrailingZeros));
+          setDraft(
+            formatDecimalInput(value, fractionDigits, trimTrailingZeros),
+          );
           event.currentTarget.blur();
         }
       }}
@@ -496,8 +536,8 @@ export function PosApp({
     () =>
       roundMoney(
         paymentLines.reduce(
-        (acc, line) => acc + parseDecimalInput(line.total || "0"),
-        0,
+          (acc, line) => acc + parseDecimalInput(line.total || "0"),
+          0,
         ),
       ),
     [paymentLines],
@@ -507,10 +547,12 @@ export function PosApp({
     () =>
       roundMoney(
         paymentLines.reduce(
-        (acc, line) =>
-          acc +
-          (line.formaPago === "01" ? parseDecimalInput(line.total || "0") : 0),
-        0,
+          (acc, line) =>
+            acc +
+            (line.formaPago === "01"
+              ? parseDecimalInput(line.total || "0")
+              : 0),
+          0,
         ),
       ),
     [paymentLines],
@@ -567,9 +609,14 @@ export function PosApp({
         .filter((line) => line.total > 0),
     [paymentLines],
   );
-  const inventoryTrackingEnabled = bootstrap?.inventoryTrackingEnabled ?? true;
+  const billingRuntime = bootstrap?.billingRuntime;
+  const posRuntime = bootstrap?.posRuntime;
+  const cashRuntime = bootstrap?.cashRuntime;
+  const billingEnabled = billingRuntime?.capabilities.electronicBilling ?? false;
+  const inventoryTrackingEnabled =
+    posRuntime?.operationalRules.trackInventoryOnSale ?? true;
   const useButcheryScaleBarcodeWeight =
-    bootstrap?.useButcheryScaleBarcodeWeight ?? false;
+    posRuntime?.capabilities.weightFromBarcode ?? false;
 
   const dataGridColumns = useMemo<GridColDef<LinePreviewRow>[]>(
     () => [
@@ -853,7 +900,8 @@ export function PosApp({
       return {
         ...current,
         products:
-          !current.inventoryTrackingEnabled || soldQtyByProduct.size === 0
+          !current.posRuntime.operationalRules.trackInventoryOnSale ||
+          soldQtyByProduct.size === 0
             ? current.products
             : current.products.map((product) => {
                 const soldQty = soldQtyByProduct.get(product.id);
@@ -872,9 +920,9 @@ export function PosApp({
         cashSession: current.cashSession
           ? {
               ...current.cashSession,
-              salesCount: current.cashSession.salesCount + 1,
+              salesCount: (current.cashSession.salesCount ?? 0) + 1,
               salesTotal: Number(
-                (current.cashSession.salesTotal + saleTotal).toFixed(2),
+                ((current.cashSession.salesTotal ?? 0) + saleTotal).toFixed(2),
               ),
             }
           : current.cashSession,
@@ -901,7 +949,7 @@ export function PosApp({
       });
       startTransition(() => {
         setBootstrap(data);
-        if (!data.billingEnabled) {
+        if (!data.billingRuntime.capabilities.electronicBilling) {
           setDocumentType("NONE");
         }
       });
@@ -1368,11 +1416,15 @@ export function PosApp({
 
   function handleAddByCode() {
     const product = resolveProductByCode(barcodeQuery);
+    const scaleBarcodeReference = product
+      ? resolveScaleBarcodeReference(product, barcodeQuery)
+      : null;
     const embeddedWeight =
       useButcheryScaleBarcodeWeight && product
-        ? extractScaleBarcodeWeight(barcodeQuery, product.codigoBarras)
+        ? extractScaleBarcodeWeight(barcodeQuery, scaleBarcodeReference)
         : null;
-    const quantity = embeddedWeight ?? parseDecimalInput(entryQuantity || "1", 1);
+    const quantity =
+      embeddedWeight ?? parseDecimalInput(entryQuantity || "1", 1);
 
     if (!product) {
       setMessage({
@@ -1426,18 +1478,21 @@ export function PosApp({
     setCashSubmitting(true);
 
     try {
-      const cashSession = await fetchJson<PosCashSession>(
-        "/api/v1/pos/cash-session",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            openingAmount: parseDecimalInput(openingAmount || "0"),
-            notes: openingNotes,
-          }),
-        },
-      );
+      const useCashMgmt = cashRuntime?.enabled;
+      const endpoint = useCashMgmt
+        ? "/api/v1/cash-management/sessions"
+        : "/api/v1/pos/cash-session";
+      const body = {
+        openingAmount: parseDecimalInput(openingAmount || "0"),
+        notes: openingNotes,
+      };
 
-      setCashSessionInBootstrap(cashSession);
+      const newSession = await fetchJson<PosCashSession>(endpoint, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+
+      setCashSessionInBootstrap(newSession);
       setMessage({ tone: "success", text: "Caja abierta correctamente" });
       setOpeningNotes("");
       setClosingAmount("");
@@ -1457,13 +1512,68 @@ export function PosApp({
     setCashSubmitting(true);
 
     try {
-      await fetchJson<PosCashSession>("/api/v1/pos/cash-session", {
-        method: "PATCH",
-        body: JSON.stringify({
-          closingAmount: parseDecimalInput(closingAmount || "0"),
-          notes: closingNotes,
-        }),
-      });
+      const useCashMgmt = cashRuntime?.enabled;
+      let closedSession: PosCashSession | null = null;
+
+      if (useCashMgmt && cashSession?.id) {
+        closedSession = await fetchJson<PosCashSession>(
+          `/api/v1/cash-management/sessions/${cashSession.id}/close`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              declaredAmount: parseDecimalInput(closingAmount || "0"),
+              notes: closingNotes,
+            }),
+          },
+        );
+      } else {
+        closedSession = await fetchJson<PosCashSession>("/api/v1/pos/cash-session", {
+          method: "PATCH",
+          body: JSON.stringify({
+            closingAmount: parseDecimalInput(closingAmount || "0"),
+            notes: closingNotes,
+          }),
+        });
+      }
+
+      if (bootstrap && closedSession) {
+        const closeTicketData: CashCloseTicketData = {
+          businessName: bootstrap.business.name,
+          businessLegalName: bootstrap.business.legalName,
+          businessRuc: bootstrap.business.ruc,
+          businessAddress: bootstrap.business.address,
+          businessPhone: bootstrap.business.phone,
+          businessEmail: bootstrap.business.email,
+          operatorName: bootstrap.operator.name,
+          sessionId: closedSession.id,
+          openedAt: formatDateTime(closedSession.openedAt),
+          closedAt: formatDateTime(closedSession.closedAt ?? new Date()),
+          openingAmount: closedSession.openingAmount,
+          salesCashTotal: closedSession.salesCashTotal ?? 0,
+          movementsTotal: closedSession.movementsTotal ?? 0,
+          expectedClosing:
+            closedSession.expectedClosing ??
+            closedSession.openingAmount +
+              (closedSession.salesCashTotal ?? 0) +
+              (closedSession.movementsTotal ?? 0),
+          declaredClosing:
+            closedSession.declaredClosing ??
+            closedSession.closingAmount ??
+            parseDecimalInput(closingAmount || "0"),
+          difference:
+            closedSession.difference ??
+            (closedSession.declaredClosing ??
+              closedSession.closingAmount ??
+              parseDecimalInput(closingAmount || "0")) -
+              (closedSession.expectedClosing ??
+                closedSession.openingAmount +
+                  (closedSession.salesCashTotal ?? 0) +
+                  (closedSession.movementsTotal ?? 0)),
+          notes: closedSession.notes ?? closingNotes,
+        };
+
+        void printCashCloseTicket(closeTicketData);
+      }
 
       setCashSessionInBootstrap(null);
       setMessage({ tone: "success", text: "Caja cerrada correctamente" });
@@ -1693,7 +1803,7 @@ export function PosApp({
           : customer;
 
       const result = await fetchJson<CheckoutResponse>(
-        "/api/v1/sales/checkout",
+        "/api/v1/pos/checkout",
         {
           method: "POST",
           body: JSON.stringify({
@@ -1734,24 +1844,36 @@ export function PosApp({
       });
 
       const ticketData: PosTicketData = {
-        businessName: bootstrap.business.name,
+        businessName: result.business?.name ?? bootstrap.business.name,
+        businessLegalName:
+          result.business?.legalName ?? bootstrap.business.legalName,
+        businessRuc: result.business?.ruc ?? bootstrap.business.ruc,
+        businessAddress:
+          result.business?.address ?? bootstrap.business.address,
+        businessPhone: result.business?.phone ?? bootstrap.business.phone,
+        businessEmail: result.business?.email ?? bootstrap.business.email,
+        accountingRequired:
+          bootstrap.billingRuntime.operationalRules.accountingRequired,
+        environment: bootstrap.billingRuntime.environment,
         operatorName: bootstrap.operator.name,
         saleNumber: result.saleNumber,
+        documentType: result.document.type,
         documentNumber: result.document.fullNumber,
         createdAt: formatDateTime(new Date()),
         customerName: effectiveCustomer.razonSocial,
+        customerIdentification: effectiveCustomer.identificacion,
+        customerEmail: effectiveCustomer.email ?? "",
+        customerPhone: effectiveCustomer.telefono ?? "",
+        customerAddress: effectiveCustomer.direccion ?? "",
         paymentMethodLabel: paymentSummaryLabel,
         documentLabel:
           result.document.type === "INVOICE"
-            ? result.invoice?.status === "AUTHORIZED"
-              ? result.document.fullNumber
-                ? `Factura ${result.document.fullNumber} autorizada`
-                : "Factura autorizada"
-              : result.document.fullNumber
-                ? `Factura ${result.document.fullNumber} en proceso`
-                : "Factura en proceso"
-            : "Ticket POS",
+            ? "FACTURA"
+            : "COMPROBANTE DE VENTA",
+        authorizationNumber: result.invoice?.authorizationNumber ?? null,
+        accessKey: result.invoice?.claveAcceso ?? null,
         subtotal: result.totals.subtotal,
+        discountTotal: result.totals.discountTotal,
         taxTotal: result.totals.taxTotal,
         total: result.totals.total,
         lines: linePreview.map((line) => ({
@@ -1824,7 +1946,7 @@ export function PosApp({
     window.location.href = "/login";
   }
 
-  function printTicketInBrowser(html: string) {
+  function printHtmlDocument(html: string, blockedMessage: string) {
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const blobUrl = URL.createObjectURL(blob);
     const printWindow = window.open(blobUrl, "_blank", "width=420,height=720");
@@ -1832,7 +1954,7 @@ export function PosApp({
       URL.revokeObjectURL(blobUrl);
       setMessage({
         tone: "error",
-        text: "El navegador bloqueo la ventana de impresion",
+        text: blockedMessage,
       });
       return;
     }
@@ -1845,11 +1967,12 @@ export function PosApp({
   async function printTicket(ticketData: PosTicketData) {
     const printStartedAt = startTimer();
     if (!selectedPrinter) {
-      printTicketInBrowser(
+      printHtmlDocument(
         buildPosTicketHtml(ticketData, {
           autoPrint: false,
           autoClose: false,
         }),
+        "El navegador bloqueo la ventana de impresion",
       );
       posLogger.info("print:browser-fallback", {
         saleNumber: ticketData.saleNumber,
@@ -1885,11 +2008,56 @@ export function PosApp({
         durationMs: timerDurationMs(printStartedAt),
         message: error instanceof Error ? error.message : "Error desconocido",
       });
-      printTicketInBrowser(
+      printHtmlDocument(
         buildPosTicketHtml(ticketData, {
           autoPrint: false,
           autoClose: false,
         }),
+        "El navegador bloqueo la ventana de impresion",
+      );
+    }
+  }
+
+  async function printCashCloseTicket(ticketData: CashCloseTicketData) {
+    const printStartedAt = startTimer();
+
+    if (!selectedPrinter) {
+      printHtmlDocument(
+        buildCashCloseTicketHtml(ticketData, {
+          autoPrint: false,
+          autoClose: false,
+        }),
+        "El navegador bloqueo la ventana de impresion del cierre",
+      );
+      posLogger.info("cash-close-print:browser-fallback", {
+        sessionId: ticketData.sessionId,
+        durationMs: timerDurationMs(printStartedAt),
+        reason: "no-selected-printer",
+      });
+      return;
+    }
+
+    try {
+      const ticket = buildCashCloseTicketEscPos(ticketData);
+      await printDocumentBytes(selectedPrinter, ticket.bytes);
+      posLogger.info("cash-close-print:completed", {
+        sessionId: ticketData.sessionId,
+        printerName: selectedPrinter,
+        durationMs: timerDurationMs(printStartedAt),
+      });
+    } catch (error) {
+      posLogger.warn("cash-close-print:fallback", {
+        sessionId: ticketData.sessionId,
+        printerName: selectedPrinter,
+        durationMs: timerDurationMs(printStartedAt),
+        message: error instanceof Error ? error.message : "Error desconocido",
+      });
+      printHtmlDocument(
+        buildCashCloseTicketHtml(ticketData, {
+          autoPrint: false,
+          autoClose: false,
+        }),
+        "El navegador bloqueo la ventana de impresion del cierre",
       );
     }
   }
@@ -2173,7 +2341,10 @@ export function PosApp({
                         borderRadius: "12px",
                         display: "grid",
                         placeItems: "center",
-                        backgroundColor: alpha(theme.palette.common.white, 0.82),
+                        backgroundColor: alpha(
+                          theme.palette.common.white,
+                          0.82,
+                        ),
                         color: "primary.main",
                       }}
                     >
@@ -2302,10 +2473,7 @@ export function PosApp({
                 sx={{ width: "100%" }}
               >
                 <Box sx={{ minWidth: 0 }}>
-                  <Typography
-                    sx={{ fontSize: 13, fontWeight: 700 }}
-                    noWrap
-                  >
+                  <Typography sx={{ fontSize: 13, fontWeight: 700 }} noWrap>
                     {printerName}
                   </Typography>
                   <Typography sx={{ fontSize: 11.5, color: "text.secondary" }}>
@@ -2559,7 +2727,7 @@ export function PosApp({
                             </MenuItem>
                             <MenuItem
                               value="INVOICE"
-                              disabled={!bootstrap.billingEnabled}
+                              disabled={!billingEnabled}
                             >
                               Factura
                             </MenuItem>
@@ -2820,23 +2988,33 @@ export function PosApp({
                             value={manualProduct}
                             onChange={(_, value) => setManualProduct(value)}
                             filterOptions={(options, state) => {
-                              const normalized = state.inputValue.trim().toLowerCase();
+                              const normalized = state.inputValue
+                                .trim()
+                                .toLowerCase();
                               if (!normalized) {
                                 return options;
                               }
 
                               return options.filter(
                                 (option) =>
-                                  option.codigo.toLowerCase().includes(normalized) ||
+                                  option.codigo
+                                    .toLowerCase()
+                                    .includes(normalized) ||
                                   (option.codigoBarras ?? "")
                                     .toLowerCase()
                                     .includes(normalized) ||
                                   matchesScaleBarcodePrefix(
                                     normalized,
-                                    option.codigoBarras,
+                                    option.codigoBarras ??
+                                      option.codigo ??
+                                      option.sku,
                                   ) ||
-                                  (option.sku ?? "").toLowerCase().includes(normalized) ||
-                                  option.nombre.toLowerCase().includes(normalized),
+                                  (option.sku ?? "")
+                                    .toLowerCase()
+                                    .includes(normalized) ||
+                                  option.nombre
+                                    .toLowerCase()
+                                    .includes(normalized),
                               );
                             }}
                             getOptionLabel={(option) =>
@@ -3461,6 +3639,7 @@ export function PosApp({
         open={cashDialogOpen}
         submitting={cashSubmitting}
         cashSession={cashSession}
+        cashRuntime={cashRuntime}
         openingAmount={openingAmount}
         openingNotes={openingNotes}
         closingAmount={closingAmount}
