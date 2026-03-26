@@ -36,7 +36,8 @@ type PosCashSessionSummary = {
 };
 
 function getDefaultDocumentType(electronicBillingEnabled: boolean) {
-  return electronicBillingEnabled ? "INVOICE" : "NONE";
+  void electronicBillingEnabled;
+  return "NONE";
 }
 
 async function getPosBusinessContext(session: SessionPayload) {

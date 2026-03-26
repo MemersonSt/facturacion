@@ -2756,7 +2756,7 @@ export function PosApp({
                             }
                           >
                             <MenuItem value="NONE">
-                              Ticket / nota simple
+                              Comprobante de venta
                             </MenuItem>
                             <MenuItem
                               value="INVOICE"
