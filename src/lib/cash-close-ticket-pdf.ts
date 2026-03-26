@@ -112,7 +112,7 @@ function businessContact(data: CashCloseTicketData) {
   const values = [data.businessPhone?.trim(), data.businessEmail?.trim()].filter(
     (value): value is string => Boolean(value),
   );
-  return values.length > 0 ? values.join(" / ") : "-";
+  return values.length > 0 ? values.join("  ") : "-";
 }
 
 function amountLine(label: string, value: string) {
@@ -126,6 +126,12 @@ function labelValueLines(label: string, value: string, width = TICKET_WIDTH) {
 
   return wrapped.map((line, index) =>
     index === 0 ? `${prefix}${line}` : `${repeat(" ", prefix.length)}${line}`,
+  );
+}
+
+function centeredFieldLines(label: string, value: string, width = TICKET_WIDTH) {
+  return wrapText(`${label}: ${value}`, width).map((line) =>
+    centerText(line, width),
   );
 }
 
@@ -191,6 +197,7 @@ export function buildCashCloseTicketEscPos(
 
   esc.initialize();
   esc.codePagePc858();
+  esc.feed(1);
 
   for (const line of wrapText(
     (data.businessLegalName ?? data.businessName ?? "").toUpperCase(),
@@ -211,14 +218,14 @@ export function buildCashCloseTicketEscPos(
 
   esc.line(centerText("CIERRE DE CAJA", TICKET_WIDTH));
 
-  for (const line of labelValueLines("RUC", ticketFieldValue(data.businessRuc))) {
-    esc.line(centerText(line, TICKET_WIDTH));
+  for (const line of centeredFieldLines("RUC", ticketFieldValue(data.businessRuc))) {
+    esc.line(line);
   }
-  for (const line of labelValueLines("Direccion", ticketFieldValue(data.businessAddress))) {
-    esc.line(centerText(line, TICKET_WIDTH));
+  for (const line of centeredFieldLines("Direccion", ticketFieldValue(data.businessAddress))) {
+    esc.line(line);
   }
-  for (const line of labelValueLines("Contacto", businessContact(data))) {
-    esc.line(centerText(line, TICKET_WIDTH));
+  for (const line of centeredFieldLines("Contacto", businessContact(data))) {
+    esc.line(line);
   }
 
   esc.line(divider());
