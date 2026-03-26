@@ -140,6 +140,10 @@ function differenceLabel(value: number) {
   return value > 0 ? "Sobrante" : "Faltante";
 }
 
+function declaredClosingLabel(value?: string) {
+  return value?.trim() || "Declarado";
+}
+
 export type EscPosBuildResult = {
   rawText: string;
   bytes: Uint8Array;
@@ -244,21 +248,41 @@ export function buildCashCloseTicketEscPos(
 
   esc.line(divider());
   esc.line(amountLine("Fondo inicial", formatMoney(data.openingAmount)));
-  esc.line(amountLine("Ventas efectivo", formatMoney(data.salesCashTotal)));
-  esc.line(amountLine("Mov. netos caja", formatMoney(data.movementsTotal)));
-  esc.line(amountLine("Esperado", formatMoney(data.expectedClosing)));
-  esc.line(amountLine("Declarado", formatMoney(data.declaredClosing)));
+  esc.line(
+    amountLine(data.salesLabel?.trim() || "Ventas efectivo", formatMoney(data.salesCashTotal)),
+  );
+  if (data.salesCount != null) {
+    esc.line(amountLine("Ventas registradas", String(data.salesCount)));
+  }
+  if (data.movementsTotal != null) {
+    esc.line(amountLine("Mov. netos caja", formatMoney(data.movementsTotal)));
+  }
+  if (data.expectedClosing != null) {
+    esc.line(amountLine("Esperado", formatMoney(data.expectedClosing)));
+  }
   esc.line(
     amountLine(
-      differenceLabel(data.difference),
-      formatMoney(Math.abs(data.difference)),
+      declaredClosingLabel(data.declaredClosingLabel),
+      formatMoney(data.declaredClosing),
     ),
   );
+  if (data.difference != null) {
+    esc.line(
+      amountLine(
+        differenceLabel(data.difference),
+        formatMoney(Math.abs(data.difference)),
+      ),
+    );
+  }
 
-  esc.line(divider());
-  esc.line("Cierre considera solo caja fisica");
-  esc.line("efectivo y movimientos manuales");
-  esc.line("No incluye tarjeta/transfer.");
+  if (data.footerNotes && data.footerNotes.length > 0) {
+    esc.line(divider());
+    for (const note of data.footerNotes) {
+      for (const line of wrapText(note, TICKET_WIDTH)) {
+        esc.line(line);
+      }
+    }
+  }
 
   if (data.notes?.trim()) {
     esc.line(divider());

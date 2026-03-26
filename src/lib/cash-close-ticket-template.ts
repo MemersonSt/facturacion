@@ -11,10 +11,14 @@ export type CashCloseTicketData = {
   closedAt: string;
   openingAmount: number;
   salesCashTotal: number;
-  movementsTotal: number;
-  expectedClosing: number;
+  salesLabel?: string;
+  salesCount?: number | null;
+  movementsTotal?: number | null;
+  expectedClosing?: number | null;
   declaredClosing: number;
-  difference: number;
+  declaredClosingLabel?: string;
+  difference?: number | null;
+  footerNotes?: string[];
   notes?: string | null;
 };
 
@@ -51,6 +55,10 @@ function businessContact(data: CashCloseTicketData) {
 function differenceLabel(value: number) {
   if (value === 0) return "Sin diferencia";
   return value > 0 ? "Sobrante" : "Faltante";
+}
+
+function declaredClosingLabel(value?: string) {
+  return value?.trim() || "Declarado";
 }
 
 export function buildCashCloseTicketHtml(
@@ -165,17 +173,35 @@ export function buildCashCloseTicketHtml(
         <table>
           <tbody>
             <tr><td>Fondo inicial</td><td class="right">$${formatMoney(data.openingAmount)}</td></tr>
-            <tr><td>Ventas efectivo</td><td class="right">$${formatMoney(data.salesCashTotal)}</td></tr>
-            <tr><td>Mov. netos caja</td><td class="right">$${formatMoney(data.movementsTotal)}</td></tr>
-            <tr><td>Esperado en caja</td><td class="right">$${formatMoney(data.expectedClosing)}</td></tr>
-            <tr><td>Declarado</td><td class="right">$${formatMoney(data.declaredClosing)}</td></tr>
-            <tr><td>${escapeHtml(differenceLabel(data.difference))}</td><td class="right">$${formatMoney(Math.abs(data.difference))}</td></tr>
+            <tr><td>${escapeHtml(data.salesLabel?.trim() || "Ventas efectivo")}</td><td class="right">$${formatMoney(data.salesCashTotal)}</td></tr>
+            ${
+              data.salesCount != null
+                ? `<tr><td>Ventas registradas</td><td class="right">${escapeHtml(String(data.salesCount))}</td></tr>`
+                : ""
+            }
+            ${
+              data.movementsTotal != null
+                ? `<tr><td>Mov. netos caja</td><td class="right">$${formatMoney(data.movementsTotal)}</td></tr>`
+                : ""
+            }
+            ${
+              data.expectedClosing != null
+                ? `<tr><td>Esperado en caja</td><td class="right">$${formatMoney(data.expectedClosing)}</td></tr>`
+                : ""
+            }
+            <tr><td>${escapeHtml(declaredClosingLabel(data.declaredClosingLabel))}</td><td class="right">$${formatMoney(data.declaredClosing)}</td></tr>
+            ${
+              data.difference != null
+                ? `<tr><td>${escapeHtml(differenceLabel(data.difference))}</td><td class="right">$${formatMoney(Math.abs(data.difference))}</td></tr>`
+                : ""
+            }
           </tbody>
         </table>
-        <div class="divider"></div>
-        <p>Este cierre considera solo caja fisica:</p>
-        <p>efectivo y movimientos manuales.</p>
-        <p>No incluye tarjeta o transferencia.</p>
+        ${
+          data.footerNotes && data.footerNotes.length > 0
+            ? `<div class="divider"></div>${data.footerNotes.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}`
+            : ""
+        }
         ${
           data.notes?.trim()
             ? `<div class="divider"></div><p>Notas:</p><p>${escapeHtml(data.notes.trim())}</p>`
