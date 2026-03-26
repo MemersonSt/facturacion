@@ -144,6 +144,12 @@ function labelValueLines(label: string, value: string, width = TICKET_WIDTH) {
   );
 }
 
+function centeredFieldLines(label: string, value: string, width = TICKET_WIDTH) {
+  return wrapText(`${label}: ${value}`, width).map((line) =>
+    centerText(line, width),
+  );
+}
+
 function inferDocumentTitle(documentLabel: string, documentNumber: string | null) {
   const label = normalizePrintableText(documentLabel).trim();
   const number = normalizePrintableText(documentNumber ?? "").trim();
@@ -183,7 +189,7 @@ function ticketBusinessContact(data: PosTicketData) {
   const values = [data.businessPhone?.trim(), data.businessEmail?.trim()].filter(
     (value): value is string => Boolean(value),
   );
-  return values.length > 0 ? values.join(" / ") : "-";
+  return values.length > 0 ? values.join("  ") : "-";
 }
 
 function paymentLines(paymentMethodLabel: string) {
@@ -338,6 +344,7 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
 
   esc.fontA();
   esc.normalSize();
+  esc.feed(1);
 
   esc.alignCenter();
   for (const line of wrapText(
@@ -357,16 +364,16 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
     }
   }
 
-  for (const line of labelValueLines("RUC", ticketFieldValue(data.businessRuc))) {
-    esc.line(centerText(line, TICKET_WIDTH));
+  for (const line of centeredFieldLines("RUC", ticketFieldValue(data.businessRuc))) {
+    esc.line(line);
   }
 
-  for (const line of labelValueLines("Direccion", ticketFieldValue(data.businessAddress))) {
-    esc.line(centerText(line, TICKET_WIDTH));
+  for (const line of centeredFieldLines("Direccion", ticketFieldValue(data.businessAddress))) {
+    esc.line(line);
   }
 
-  for (const line of labelValueLines("Contacto", ticketBusinessContact(data))) {
-    esc.line(centerText(line, TICKET_WIDTH));
+  for (const line of centeredFieldLines("Contacto", ticketBusinessContact(data))) {
+    esc.line(line);
   }
 
   if (documentTitle) {
@@ -385,26 +392,26 @@ export function buildPosTicketEscPos(data: PosTicketData): EscPosBuildResult {
   }
 
   if (data.documentType === "INVOICE") {
-    for (const line of labelValueLines("Ambiente", environmentLabel(data.environment))) {
-      esc.line(centerText(line, TICKET_WIDTH));
+    for (const line of centeredFieldLines("Ambiente", environmentLabel(data.environment))) {
+      esc.line(line);
     }
 
-    for (const line of labelValueLines("Emision", "NORMAL")) {
-      esc.line(centerText(line, TICKET_WIDTH));
+    for (const line of centeredFieldLines("Emision", "NORMAL")) {
+      esc.line(line);
     }
 
     for (const line of stackedLabelValueLines(
       "No. de autorizacion",
       ticketFieldValue(data.authorizationNumber),
     )) {
-      esc.line(centerText(line, TICKET_WIDTH));
+      esc.line(centerText(line.trim(), TICKET_WIDTH));
     }
 
     for (const line of stackedLabelValueLines(
       "Clave de acceso",
       ticketFieldValue(data.accessKey),
     )) {
-      esc.line(centerText(line, TICKET_WIDTH));
+      esc.line(centerText(line.trim(), TICKET_WIDTH));
     }
   } else if (data.saleNumber) {
     esc.line(centerText(`Venta #${data.saleNumber}`, TICKET_WIDTH));

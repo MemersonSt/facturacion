@@ -112,7 +112,7 @@ function businessContact(data: CashCloseTicketData) {
   const values = [data.businessPhone?.trim(), data.businessEmail?.trim()].filter(
     (value): value is string => Boolean(value),
   );
-  return values.length > 0 ? values.join(" / ") : "-";
+  return values.length > 0 ? values.join("  ") : "-";
 }
 
 function amountLine(label: string, value: string) {
