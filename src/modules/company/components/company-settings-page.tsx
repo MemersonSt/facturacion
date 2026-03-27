@@ -4,6 +4,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   FormControlLabel,
   MenuItem,
@@ -15,10 +16,22 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { Save } from "lucide-react";
-import { useEffect, useState, type SyntheticEvent } from "react";
+import { Save, Upload } from "lucide-react";
+import { useEffect, useState, type ChangeEvent, type SyntheticEvent } from "react";
 
-import type { PosPolicyEditorValue } from "@/modules/pos/policies/pos-policy-editor";
+import type { BusinessBlueprint } from "@/core/platform/business-blueprint";
+import {
+  CAPABILITY_CATALOG,
+  EDITION_CATALOG,
+  MODULE_CATALOG,
+  POLICY_PACK_CATALOG,
+} from "@/core/platform/catalog";
+import { normalizeBusinessBlueprint } from "@/core/platform/composition";
+import type {
+  CapabilityKey,
+  ModuleKey,
+  PolicyPackKey,
+} from "@/core/platform/contracts";
 import { fetchJson } from "@/shared/dashboard/api";
 
 type CompanySettingsPageProps = {
@@ -33,6 +46,8 @@ type BusinessSettingsResponse = {
   phone: string | null;
   email: string | null;
   address: string | null;
+  logoUrl: string | null;
+  blueprint: BusinessBlueprint;
   taxProfile: {
     profileType: string;
     requiresElectronicBilling: boolean;
@@ -59,7 +74,6 @@ type BusinessSettingsResponse = {
       active: boolean;
     }>;
   }>;
-  posPolicy: PosPolicyEditorValue;
 };
 
 type FormState = {
@@ -80,8 +94,7 @@ type FormState = {
   invoiceEstablishmentCode: string;
   invoiceEmissionPointCode: string;
   invoiceNextSequence: number;
-  posPolicyPack: PosPolicyEditorValue["policyPack"];
-  trackInventoryOnSale: boolean;
+  blueprint: BusinessBlueprint;
 };
 
 type SnackbarState = {
@@ -107,8 +120,12 @@ const DEFAULT_FORM: FormState = {
   invoiceEstablishmentCode: "001",
   invoiceEmissionPointCode: "001",
   invoiceNextSequence: 1,
-  posPolicyPack: "POS_GENERIC",
-  trackInventoryOnSale: true,
+  blueprint: {
+    modules: [],
+    edition: "STARTER",
+    policyPacks: [],
+    capabilities: [],
+  },
 };
 
 const PROFILE_OPTIONS = [
@@ -152,17 +169,63 @@ function toFormState(data: BusinessSettingsResponse): FormState {
     invoiceEmissionPointCode:
       defaultInvoiceSeries?.emissionPointCode ?? "001",
     invoiceNextSequence: defaultInvoiceSeries?.nextSequence ?? 1,
-    posPolicyPack: data.posPolicy.policyPack,
-    trackInventoryOnSale: data.posPolicy.trackInventoryOnSale,
+    blueprint: normalizeBusinessBlueprint(data.blueprint),
   };
+}
+
+async function convertImageToPng(file: File) {
+  if (file.type === "image/png") {
+    return file;
+  }
+
+  const imageUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const nextImage = new Image();
+      nextImage.onload = () => resolve(nextImage);
+      nextImage.onerror = () =>
+        reject(new Error("No se pudo leer la imagen seleccionada"));
+      nextImage.src = imageUrl;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("No se pudo preparar la conversion del logo");
+    }
+
+    context.drawImage(image, 0, 0);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/png");
+    });
+
+    if (!blob) {
+      throw new Error("No se pudo convertir el logo a PNG");
+    }
+
+    return new File([blob], "logo.png", { type: "image/png" });
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
 }
 
 export function CompanySettingsPage({ canEdit }: CompanySettingsPageProps) {
   const theme = useTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<SnackbarState>(null);
+
+  function applyBusinessSettings(data: BusinessSettingsResponse) {
+    setForm(toFormState(data));
+    setLogoUrl(data.logoUrl);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -171,7 +234,7 @@ export function CompanySettingsPage({ canEdit }: CompanySettingsPageProps) {
       try {
         const data = await fetchJson<BusinessSettingsResponse>("/api/v1/business");
         if (!mounted) return;
-        setForm(toFormState(data));
+        applyBusinessSettings(data);
       } catch (error) {
         if (!mounted) return;
         setSnackbar({
@@ -199,6 +262,119 @@ export function CompanySettingsPage({ canEdit }: CompanySettingsPageProps) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateBlueprint(
+    updater: (current: BusinessBlueprint) => BusinessBlueprint,
+  ) {
+    setForm((current) => ({
+      ...current,
+      blueprint: normalizeBusinessBlueprint(updater(current.blueprint)),
+    }));
+  }
+
+  function toggleBlueprintValue<T extends string>(
+    values: readonly T[],
+    value: T,
+    enabled: boolean,
+  ) {
+    if (enabled) {
+      return Array.from(new Set([...values, value]));
+    }
+
+    return values.filter((currentValue) => currentValue !== value);
+  }
+
+  function handleModuleToggle(moduleKey: ModuleKey, enabled: boolean) {
+    updateBlueprint((current) => ({
+      ...current,
+      modules: toggleBlueprintValue(current.modules, moduleKey, enabled),
+    }));
+  }
+
+  function handlePolicyPackToggle(
+    policyPackKey: PolicyPackKey,
+    enabled: boolean,
+  ) {
+    updateBlueprint((current) => ({
+      ...current,
+      policyPacks: toggleBlueprintValue(
+        current.policyPacks,
+        policyPackKey,
+        enabled,
+      ),
+    }));
+  }
+
+  function handleCapabilityToggle(
+    capabilityKey: CapabilityKey,
+    enabled: boolean,
+  ) {
+    updateBlueprint((current) => ({
+      ...current,
+      capabilities: toggleBlueprintValue(
+        current.capabilities,
+        capabilityKey,
+        enabled,
+      ),
+    }));
+  }
+
+  async function handleLogoSelected(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (!canEdit) {
+      setSnackbar({
+        tone: "error",
+        text: "Tu usuario no tiene permisos para actualizar el logo",
+      });
+      return;
+    }
+
+    setLogoUploading(true);
+
+    try {
+      const pngFile = await convertImageToPng(file);
+      const body = new FormData();
+      body.set("file", pngFile);
+
+      const response = await fetch("/api/v1/business/logo", {
+        method: "PUT",
+        body,
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: { logoUrl: string };
+        error?: { message: string };
+      };
+
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.error?.message || "No se pudo subir el logo");
+      }
+
+      setLogoUrl(payload.data.logoUrl);
+      setSnackbar({
+        tone: "success",
+        text: "Logo actualizado correctamente",
+      });
+    } catch (error) {
+      setSnackbar({
+        tone: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "No se pudo actualizar el logo",
+      });
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canEdit) {
@@ -208,23 +384,14 @@ export function CompanySettingsPage({ canEdit }: CompanySettingsPageProps) {
     setSaving(true);
 
     try {
-      const {
-        posPolicyPack,
-        trackInventoryOnSale,
-        ...rest
-      } = form;
       const payload = {
-        ...rest,
-        posPolicy: {
-          policyPack: posPolicyPack,
-          trackInventoryOnSale,
-        },
+        ...form,
       };
       const data = await fetchJson<BusinessSettingsResponse>("/api/v1/business", {
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      setForm(toFormState(data));
+      applyBusinessSettings(data);
       setSnackbar({
         tone: "success",
         text: "Datos de la compania actualizados correctamente",
@@ -247,6 +414,39 @@ export function CompanySettingsPage({ canEdit }: CompanySettingsPageProps) {
       return;
     }
     setSnackbar(null);
+  }
+
+  function modulesSatisfied(requiredModules: readonly ModuleKey[]) {
+    return requiredModules.every((moduleKey) =>
+      form.blueprint.modules.includes(moduleKey),
+    );
+  }
+
+  function renderChipList<T extends string>(
+    values: readonly T[],
+    catalog: Record<T, { label: string }>,
+    emptyText: string,
+  ) {
+    if (!values.length) {
+      return (
+        <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
+          {emptyText}
+        </Typography>
+      );
+    }
+
+    return (
+      <Stack direction="row" flexWrap="wrap" useFlexGap gap={1}>
+        {values.map((value) => (
+          <Chip
+            key={value}
+            label={catalog[value]?.label ?? value}
+            size="small"
+            variant="outlined"
+          />
+        ))}
+      </Stack>
+    );
   }
 
   if (loading) {
@@ -377,54 +577,336 @@ export function CompanySettingsPage({ canEdit }: CompanySettingsPageProps) {
             sx={{
               borderRadius: "24px",
               borderColor: "divider",
-              backgroundColor: alpha(theme.palette.warning.light, 0.12),
+              backgroundColor: alpha(theme.palette.info.light, 0.16),
+              p: { xs: 2, md: 2.5 },
+            }}
+          >
+            <Stack
+              spacing={2}
+              direction={{ xs: "column", md: "row" }}
+              alignItems={{ xs: "stretch", md: "center" }}
+              justifyContent="space-between"
+            >
+              <Stack spacing={0.75}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                  Logo del negocio
+                </Typography>
+                <Typography sx={{ color: "text.secondary", fontSize: 14 }}>
+                  Se usara en cotizaciones, impresos y vistas administrativas.
+                </Typography>
+              </Stack>
+
+              <Button
+                component="label"
+                variant="outlined"
+                startIcon={<Upload className="h-4 w-4" />}
+                disabled={!canEdit || logoUploading}
+              >
+                {logoUploading ? "Subiendo..." : "Cargar logo"}
+                <input
+                  hidden
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleLogoSelected}
+                />
+              </Button>
+            </Stack>
+
+            <Paper
+              variant="outlined"
+              sx={{
+                mt: 2,
+                minHeight: 180,
+                borderRadius: "20px",
+                borderStyle: "dashed",
+                display: "grid",
+                placeItems: "center",
+                overflow: "hidden",
+                backgroundColor: alpha(theme.palette.background.paper, 0.82),
+              }}
+            >
+              {logoUrl ? (
+                <Box
+                  component="img"
+                  src={logoUrl}
+                  alt="Logo del negocio"
+                  sx={{
+                    maxWidth: "100%",
+                    maxHeight: 160,
+                    objectFit: "contain",
+                    p: 2,
+                  }}
+                />
+              ) : (
+                <Stack spacing={0.75} alignItems="center" sx={{ p: 3 }}>
+                  <Typography sx={{ fontWeight: 700 }}>
+                    Sin logo cargado
+                  </Typography>
+                  <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
+                    Puedes subir PNG, JPG o WEBP. Se convertira a PNG para usarlo en el sistema.
+                  </Typography>
+                </Stack>
+              )}
+            </Paper>
+          </Paper>
+
+          <Paper
+            sx={{
+              borderRadius: "24px",
+              borderColor: "divider",
+              backgroundColor: alpha(theme.palette.success.light, 0.14),
               p: { xs: 2, md: 2.5 },
             }}
           >
             <Stack spacing={2}>
               <Box>
                 <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                  Operacion POS
+                  Composition Blueprint
                 </Typography>
                 <Typography sx={{ mt: 0.5, color: "text.secondary", fontSize: 14 }}>
-                  Define el perfil operativo del POS y sus reglas base de venta.
+                  Configura la plataforma como piezas: modulos, edicion,
+                  policy packs y capabilities.
                 </Typography>
               </Box>
 
-              <TextField
-                select
-                label="Perfil POS"
-                value={form.posPolicyPack}
-                onChange={(e) =>
-                  updateField(
-                    "posPolicyPack",
-                    e.target.value as FormState["posPolicyPack"],
-                  )
-                }
-                disabled={!canEdit}
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 1.25,
+                  gridTemplateColumns: {
+                    xs: "1fr",
+                    md: "repeat(2, minmax(0, 1fr))",
+                  },
+                }}
               >
-                <MenuItem value="POS_GENERIC">Generico</MenuItem>
-                <MenuItem value="POS_BUTCHERY">Carniceria</MenuItem>
-              </TextField>
+                <TextField
+                  select
+                  label="Edicion de plataforma"
+                  value={form.blueprint.edition}
+                  onChange={(e) =>
+                    updateBlueprint((current) => ({
+                      ...current,
+                      edition: e.target.value as BusinessBlueprint["edition"],
+                    }))
+                  }
+                  disabled={!canEdit}
+                >
+                  {Object.entries(EDITION_CATALOG).map(([value, config]) => (
+                    <MenuItem key={value} value={value}>
+                      {config.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Box>
 
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={form.trackInventoryOnSale}
-                    onChange={(e) =>
-                      updateField("trackInventoryOnSale", e.target.checked)
-                    }
-                    disabled={!canEdit}
-                  />
-                }
-                label="Controlar inventario al vender"
-              />
+              <Paper
+                variant="outlined"
+                sx={{
+                  borderRadius: "18px",
+                  backgroundColor: alpha(theme.palette.background.paper, 0.72),
+                  p: 1.5,
+                }}
+              >
+                <Stack spacing={1.5}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    Modulos
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gap: 1.25,
+                      gridTemplateColumns: {
+                        xs: "1fr",
+                        md: "repeat(2, minmax(0, 1fr))",
+                      },
+                    }}
+                  >
+                    {Object.entries(MODULE_CATALOG).map(([value, config]) => (
+                      <FormControlLabel
+                        key={value}
+                        control={
+                          <Switch
+                            checked={form.blueprint.modules.includes(value as ModuleKey)}
+                            onChange={(e) =>
+                              handleModuleToggle(
+                                value as ModuleKey,
+                                e.target.checked,
+                              )
+                            }
+                            disabled={!canEdit}
+                          />
+                        }
+                        label={
+                          <Stack spacing={0.2}>
+                            <Typography>{config.label}</Typography>
+                            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                              {config.description}
+                            </Typography>
+                          </Stack>
+                        }
+                      />
+                    ))}
+                  </Box>
+                </Stack>
+              </Paper>
 
-              <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
-                {form.posPolicyPack === "POS_BUTCHERY"
-                  ? "El perfil carniceria activa lectura de peso desde codigo de balanza al escanear productos."
-                  : "El perfil generico mantiene un flujo base de POS sin lectura de peso embebido."}
-              </Typography>
+              <Paper
+                variant="outlined"
+                sx={{
+                  borderRadius: "18px",
+                  backgroundColor: alpha(theme.palette.background.paper, 0.72),
+                  p: 1.5,
+                }}
+              >
+                <Stack spacing={1.5}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    Policy Packs
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gap: 1.25,
+                      gridTemplateColumns: {
+                        xs: "1fr",
+                        md: "repeat(2, minmax(0, 1fr))",
+                      },
+                    }}
+                  >
+                    {Object.entries(POLICY_PACK_CATALOG).map(([value, config]) => {
+                      const disabled =
+                        !canEdit || !modulesSatisfied(config.requiresModules);
+
+                      return (
+                        <FormControlLabel
+                          key={value}
+                          control={
+                            <Switch
+                              checked={form.blueprint.policyPacks.includes(
+                                value as PolicyPackKey,
+                              )}
+                              onChange={(e) =>
+                                handlePolicyPackToggle(
+                                  value as PolicyPackKey,
+                                  e.target.checked,
+                                )
+                              }
+                              disabled={disabled}
+                            />
+                          }
+                          label={
+                            <Stack spacing={0.2}>
+                              <Typography>{config.label}</Typography>
+                              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                                {config.description}
+                              </Typography>
+                            </Stack>
+                          }
+                        />
+                      );
+                    })}
+                  </Box>
+                </Stack>
+              </Paper>
+
+              <Paper
+                variant="outlined"
+                sx={{
+                  borderRadius: "18px",
+                  backgroundColor: alpha(theme.palette.background.paper, 0.72),
+                  p: 1.5,
+                }}
+              >
+                <Stack spacing={1.5}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    Capabilities
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gap: 1.25,
+                      gridTemplateColumns: {
+                        xs: "1fr",
+                        md: "repeat(2, minmax(0, 1fr))",
+                      },
+                    }}
+                  >
+                    {Object.entries(CAPABILITY_CATALOG).map(([value, config]) => {
+                      const disabled =
+                        !canEdit || !modulesSatisfied(config.requiresModules);
+
+                      return (
+                        <FormControlLabel
+                          key={value}
+                          control={
+                            <Switch
+                              checked={form.blueprint.capabilities.includes(
+                                value as CapabilityKey,
+                              )}
+                              onChange={(e) =>
+                                handleCapabilityToggle(
+                                  value as CapabilityKey,
+                                  e.target.checked,
+                                )
+                              }
+                              disabled={disabled}
+                            />
+                          }
+                          label={
+                            <Stack spacing={0.2}>
+                              <Typography>{config.label}</Typography>
+                              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                                {config.description}
+                              </Typography>
+                            </Stack>
+                          }
+                        />
+                      );
+                    })}
+                  </Box>
+                </Stack>
+              </Paper>
+
+              <Paper
+                variant="outlined"
+                sx={{
+                  borderRadius: "18px",
+                  backgroundColor: alpha(theme.palette.background.paper, 0.84),
+                  p: 1.5,
+                }}
+              >
+                <Stack spacing={1.5}>
+                  <Box>
+                    <Typography sx={{ fontSize: 12, color: "text.secondary", mb: 0.75 }}>
+                      Modulos actuales
+                    </Typography>
+                    {renderChipList(
+                      form.blueprint.modules,
+                      MODULE_CATALOG,
+                      "Todavia no hay modulos activos en el blueprint.",
+                    )}
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontSize: 12, color: "text.secondary", mb: 0.75 }}>
+                      Policy packs actuales
+                    </Typography>
+                    {renderChipList(
+                      form.blueprint.policyPacks,
+                      POLICY_PACK_CATALOG,
+                      "Todavia no hay policy packs configurados.",
+                    )}
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontSize: 12, color: "text.secondary", mb: 0.75 }}>
+                      Capabilities actuales
+                    </Typography>
+                    {renderChipList(
+                      form.blueprint.capabilities,
+                      CAPABILITY_CATALOG,
+                      "Todavia no hay capabilities activas.",
+                    )}
+                  </Box>
+                </Stack>
+              </Paper>
             </Stack>
           </Paper>
 

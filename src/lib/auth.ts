@@ -1,12 +1,14 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
+import { MODULE_KEYS, type ModuleKey } from "@/core/platform/contracts";
+
 export const SESSION_COOKIE = "arg_session";
 const JWT_ALG = "HS256";
 const JWT_TTL_SECONDS = 60 * 60 * 8; // 8 horas
-const DEFAULT_SESSION_FEATURES = ["BILLING", "QUOTES"] as const;
+const DEFAULT_SESSION_FEATURES = ["BILLING", "QUOTES"] as const satisfies readonly ModuleKey[];
 
-export type SessionFeatureKey = (typeof DEFAULT_SESSION_FEATURES)[number] | "POS";
+export type SessionFeatureKey = ModuleKey;
 
 export type SessionPayload = {
   sub: string;
@@ -47,7 +49,8 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
     const features = Array.isArray(payload.features)
       ? payload.features.filter(
           (feature): feature is SessionFeatureKey =>
-            feature === "BILLING" || feature === "POS" || feature === "QUOTES",
+            typeof feature === "string" &&
+            MODULE_KEYS.includes(feature as ModuleKey),
         )
       : [...DEFAULT_SESSION_FEATURES];
 

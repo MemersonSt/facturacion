@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { BusinessFeatureKey } from "@prisma/client";
 import { loginSchema, verifyCredentials } from "@/core/auth/auth.service";
+import { parseBusinessBlueprint } from "@/core/platform/blueprint-config";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { cookies } from "next/headers";
@@ -16,6 +16,9 @@ export async function POST(request: Request) {
       return fail("Credenciales incorrectas", 401);
     }
 
+    const blueprint = parseBusinessBlueprint(user.business.blueprintConfig);
+    const features = blueprint.modules;
+
     const token = await signSession({
       sub: user.id,
       businessId: user.businessId,
@@ -23,9 +26,7 @@ export async function POST(request: Request) {
       name: user.name,
       email: user.email,
       role: user.role as "ADMIN" | "SELLER",
-      features: user.business.features
-        .filter((feature) => feature.enabled)
-        .map((feature) => feature.key as BusinessFeatureKey),
+      features,
     });
 
     const cookieStore = await cookies();
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
       role: user.role,
       businessId: user.businessId,
       businessName: user.business.name,
-      features: user.business.features.filter((feature) => feature.enabled).map((feature) => feature.key),
+      features,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

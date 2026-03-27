@@ -5,44 +5,22 @@ import {
   parsePosFeatureBlueprint,
   parsePosFeatureConfig,
   serializePosFeatureConfigWithBlueprint,
-  serializePosFeatureConfigWithBlueprintAndCash,
 } from "@/core/business/feature-config";
 import type { BusinessBlueprint } from "@/core/platform/business-blueprint";
 import { mergeBusinessBlueprint, parseBusinessBlueprint, serializeBusinessBlueprint } from "@/core/platform/blueprint-config";
+import { blueprintToEnabledBusinessFeatures, normalizeBusinessBlueprint } from "@/core/platform/composition";
 import {
   mapLegacyBusinessBlueprint,
 } from "@/core/platform/legacy-mappers";
 import { prisma } from "@/lib/prisma";
 import type { UpdateBusinessSettingsInput } from "@/core/business/schemas";
 import {
-  DEFAULT_POS_POLICY_EDITOR,
-  editorValueToPosBlueprint,
-  legacyPosFlagsToPolicyEditorValue,
+  posBlueprintToEditorValue,
   posPolicyToLegacyFlags,
 } from "@/modules/pos/policies/pos-policy-editor";
-import {
-  DEFAULT_CASH_POLICY_EDITOR,
-  cashPolicyToBlueprint,
-} from "@/modules/cash-management/policies/cash-policy-editor";
 
 export const DEFAULT_BUSINESS_SLUG = "default";
 const DEFAULT_DOCUMENT_ISSUER_CODE = "MAIN";
-const MANAGED_POS_POLICY_PACKS = new Set(["POS_GENERIC", "POS_BUTCHERY", "POS_RESTAURANT"]);
-const MANAGED_MODULES = new Set(["POS", "CASH_MANAGEMENT"]);
-const MANAGED_CAPABILITIES = new Set([
-  "POS_SCALE_BARCODES",
-  "POS_WEIGHT_FROM_BARCODE",
-  "POS_TRACK_INVENTORY_ON_SALE",
-  "POS_TABLE_SERVICE",
-  "POS_KITCHEN_TICKETS",
-  "CASH_SESSION_REQUIRED",
-  "CASH_DECLARED_CLOSING",
-  "CASH_WITHDRAWALS",
-  "CASH_DEPOSITS",
-  "CASH_SHIFT_RECONCILIATION",
-  "CASH_BLIND_CLOSE",
-  "CASH_APPROVAL_CLOSE",
-]);
 
 const DEFAULT_FEATURE_STATE: Record<BusinessFeatureKey, boolean> = {
   BILLING: true,
@@ -120,6 +98,18 @@ export type BusinessContext = Prisma.BusinessGetPayload<{
 
 function toEnabledFeatures(features: Array<{ key: BusinessFeatureKey; enabled: boolean }>) {
   return features.filter((feature) => feature.enabled).map((feature) => feature.key);
+}
+
+function buildDefaultBusinessBlueprint() {
+  return normalizeBusinessBlueprint(
+    mapLegacyBusinessBlueprint({
+      features: Object.entries(DEFAULT_FEATURE_STATE).map(([key, enabled]) => ({
+        key: key as BusinessFeatureKey,
+        enabled,
+      })),
+      posSettings: { ...DEFAULT_POS_FEATURE_CONFIG },
+    }),
+  );
 }
 
 async function ensureDefaultDocumentSetup(params: {
@@ -220,7 +210,7 @@ function toBusinessContext(
     const canonicalBlueprint = parseBusinessBlueprint(business.blueprintConfig);
     return {
       ...business,
-      enabledFeatures: toEnabledFeatures(business.features),
+      enabledFeatures: blueprintToEnabledBusinessFeatures(canonicalBlueprint),
       blueprint: canonicalBlueprint,
       posSettings,
     };
@@ -262,9 +252,19 @@ export async function ensureDefaultBusiness() {
       name: "Negocio Principal",
       legalName: "Negocio Principal",
       slug: DEFAULT_BUSINESS_SLUG,
+      blueprintConfig: serializeBusinessBlueprint(buildDefaultBusinessBlueprint()),
     },
     select: DEFAULT_BUSINESS_SELECT,
   });
+
+  if (!business.blueprintConfig) {
+    await prisma.business.update({
+      where: { id: business.id },
+      data: {
+        blueprintConfig: serializeBusinessBlueprint(buildDefaultBusinessBlueprint()),
+      },
+    });
+  }
 
   await Promise.all(
     Object.entries(DEFAULT_FEATURE_STATE).map(([key, enabled]) =>
@@ -284,9 +284,7 @@ export async function ensureDefaultBusiness() {
             ? {
                 config: serializePosFeatureConfigWithBlueprint(
                   DEFAULT_POS_FEATURE_CONFIG,
-                  editorValueToPosBlueprint(DEFAULT_POS_POLICY_EDITOR, {
-                    enabled,
-                  }),
+                  buildDefaultBusinessBlueprint(),
                 ),
               }
             : {}),
@@ -373,68 +371,11 @@ export async function updateBusinessSettings(
     throw new Error("Negocio no encontrado");
   }
 
-  const existingPosFeature = await prisma.businessFeature.findUnique({
-    where: {
-      businessId_key: {
-        businessId,
-        key: "POS",
-      },
-    },
-    select: {
-      enabled: true,
-    },
-  });
-  const posEnabled = existingPosFeature?.enabled ?? DEFAULT_FEATURE_STATE.POS;
-  const nextPosPolicy =
-    input.posPolicy ??
-    legacyPosFlagsToPolicyEditorValue({
-      trackInventoryOnSale: input.trackInventoryOnSale,
-      useButcheryScaleBarcodeWeight: input.useButcheryScaleBarcodeWeight,
-    });
+  const nextBlueprint = normalizeBusinessBlueprint(input.blueprint);
+  const nextEnabledFeatures = blueprintToEnabledBusinessFeatures(nextBlueprint);
+  const posEnabled = nextEnabledFeatures.includes("POS");
+  const nextPosPolicy = posBlueprintToEditorValue(nextBlueprint);
   const nextPosLegacyFlags = posPolicyToLegacyFlags(nextPosPolicy);
-  const nextPosBlueprint = editorValueToPosBlueprint(nextPosPolicy, {
-    enabled: posEnabled,
-  });
-  const nextCashPolicy = input.cashPolicy ?? DEFAULT_CASH_POLICY_EDITOR;
-  const currentBusinessContext = toBusinessContext(existingBusiness);
-  const legacyBlueprint = mapLegacyBusinessBlueprint({
-    features: existingBusiness.features,
-    posSettings: parsePosFeatureConfig(
-      existingBusiness.features.find((feature) => feature.key === "POS")?.config,
-    ),
-  });
-  const preservedBlueprint: BusinessBlueprint = {
-    modules: Array.from(
-      new Set(
-        [...currentBusinessContext.blueprint.modules, ...legacyBlueprint.modules].filter(
-          (module) => !MANAGED_MODULES.has(module),
-        ),
-      ),
-    ),
-    edition: currentBusinessContext.blueprint.edition,
-    policyPacks: currentBusinessContext.blueprint.policyPacks.filter(
-      (policyPack) => !MANAGED_POS_POLICY_PACKS.has(policyPack),
-    ),
-    capabilities: Array.from(
-      new Set(
-        [...currentBusinessContext.blueprint.capabilities, ...legacyBlueprint.capabilities].filter(
-          (capability) => !MANAGED_CAPABILITIES.has(capability),
-        ),
-      ),
-    ),
-  };
-
-  // Blueprint canónico: combina POS + Cash Management.
-  // Se persiste en Business.blueprintConfig — fuente de verdad del composition system.
-  const cashFragment = cashPolicyToBlueprint(nextCashPolicy);
-  const canonicalBlueprint = mergeBusinessBlueprint(preservedBlueprint, {
-    modules: Array.from(new Set([...nextPosBlueprint.modules, ...cashFragment.modules])),
-    edition: preservedBlueprint.edition,
-    policyPacks: nextPosBlueprint.policyPacks,
-    capabilities: Array.from(
-      new Set([...nextPosBlueprint.capabilities, ...cashFragment.capabilities]),
-    ),
-  });
   const business = await prisma.business.update({
     where: { id: businessId },
     data: {
@@ -444,7 +385,7 @@ export async function updateBusinessSettings(
       phone: input.phone || null,
       email: input.email || null,
       address: input.address || null,
-      blueprintConfig: serializeBusinessBlueprint(canonicalBlueprint),
+      blueprintConfig: serializeBusinessBlueprint(nextBlueprint),
       taxProfile: {
         upsert: {
           update: {
@@ -535,25 +476,43 @@ export async function updateBusinessSettings(
       },
     },
     update: {
-      config: serializePosFeatureConfigWithBlueprintAndCash(
+      enabled: posEnabled,
+      config: serializePosFeatureConfigWithBlueprint(
         nextPosLegacyFlags,
-        nextPosBlueprint,
-        nextCashPolicy,
+        nextBlueprint,
       ),
     },
     create: {
       businessId,
       key: "POS",
-      enabled: DEFAULT_FEATURE_STATE.POS,
-      config: serializePosFeatureConfigWithBlueprintAndCash(
+      enabled: posEnabled,
+      config: serializePosFeatureConfigWithBlueprint(
         nextPosLegacyFlags,
-        editorValueToPosBlueprint(nextPosPolicy, {
-          enabled: DEFAULT_FEATURE_STATE.POS,
-        }),
-        nextCashPolicy,
+        nextBlueprint,
       ),
     },
   });
+
+  await Promise.all(
+    (["BILLING", "QUOTES"] as const).map((key) =>
+      prisma.businessFeature.upsert({
+        where: {
+          businessId_key: {
+            businessId,
+            key,
+          },
+        },
+        update: {
+          enabled: nextEnabledFeatures.includes(key),
+        },
+        create: {
+          businessId,
+          key,
+          enabled: nextEnabledFeatures.includes(key),
+        },
+      }),
+    ),
+  );
 
   const refreshed = await prisma.business.findUnique({
     where: { id: businessId },

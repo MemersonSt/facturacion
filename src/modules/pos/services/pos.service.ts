@@ -3,8 +3,9 @@ import {
   Prisma,
 } from "@prisma/client";
 
-import { ensureDefaultBusiness, getBusinessContextById, hasBusinessFeature } from "@/core/business/business.service";
+import { ensureDefaultBusiness, getBusinessContextById } from "@/core/business/business.service";
 import { listProducts } from "@/core/inventory/inventory.service";
+import { hasModule } from "@/core/platform/guards";
 import type { SessionPayload } from "@/lib/auth";
 import { createLogger, startTimer, timerDurationMs } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
@@ -45,7 +46,7 @@ async function getPosBusinessContext(session: SessionPayload) {
     ? await getBusinessContextById(session.businessId)
     : await ensureDefaultBusiness();
 
-  if (!hasBusinessFeature(business.enabledFeatures, "POS")) {
+  if (!hasModule(business.blueprint, "POS")) {
     throw new Error("Modulo POS no habilitado para este negocio");
   }
 

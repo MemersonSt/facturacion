@@ -1,7 +1,6 @@
 import { z } from "zod";
 
-import { posPolicyEditorSchema } from "@/modules/pos/policies/pos-policy-editor";
-import { cashPolicyEditorSchema } from "@/modules/cash-management/policies/cash-policy-editor";
+import { businessBlueprintSchema } from "@/core/platform/schemas";
 
 export const businessProfileTypeSchema = z.enum([
   "GENERAL",
@@ -51,10 +50,7 @@ export const updateBusinessSettingsSchema = z.object({
     "El punto de emision debe tener 3 digitos",
   ),
   invoiceNextSequence: z.number().int().min(1).default(1),
-  trackInventoryOnSale: z.boolean().default(true),
-  useButcheryScaleBarcodeWeight: z.boolean().default(false),
-  posPolicy: posPolicyEditorSchema.optional(),
-  cashPolicy: cashPolicyEditorSchema.optional(),
+  blueprint: businessBlueprintSchema,
 });
 
 export type UpdateBusinessSettingsInput = z.infer<

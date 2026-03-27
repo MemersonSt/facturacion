@@ -576,7 +576,7 @@ export default function CheckoutPage() {
             <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
             {isQuoteMode
               ? "Guardando cotizacion..."
-              : "Registrando venta y procesando factura..."}
+              : "Registrando venta y preparando documento..."}
           </div>
         </div>
       ) : null}
