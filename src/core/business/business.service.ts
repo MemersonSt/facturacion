@@ -37,7 +37,9 @@ const DEFAULT_BUSINESS_SELECT = {
   email: true,
   address: true,
   slug: true,
+  logoStorageKey: true,
   blueprintConfig: true,
+  updatedAt: true,
   features: {
     select: {
       key: true,

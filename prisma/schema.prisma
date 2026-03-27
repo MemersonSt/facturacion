@@ -103,6 +103,7 @@ model Business {
   address         String?
   slug            String            @unique
   isActive        Boolean           @default(true)
+  logoStorageKey  String?
   /// Blueprint canónico del negocio. Fuente de verdad para módulos, edición y capabilities.
   /// Reemplaza al blueprint embebido en BusinessFeature.config (sistema legado).
   blueprintConfig Json?

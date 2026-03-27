@@ -1,5 +1,3 @@
-import { existsSync, statSync } from "node:fs";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
@@ -8,19 +6,11 @@ import {
   getBusinessContextById,
   updateBusinessSettings,
 } from "@/core/business/business.service";
+import { buildBusinessLogoUrl } from "@/core/business/business-logo.service";
 import { updateBusinessSettingsSchema } from "@/core/business/schemas";
 import { getSession } from "@/lib/auth";
 import { resolveBillingRuntime } from "@/modules/billing/policies/resolve-billing-runtime";
 import { resolvePosRuntime } from "@/modules/pos/policies/resolve-pos-runtime";
-
-function getBusinessLogoUrl() {
-  const logoPath = path.join(process.cwd(), "public", "logo.png");
-  if (!existsSync(logoPath)) {
-    return null;
-  }
-
-  return `/logo.png?v=${Math.trunc(statSync(logoPath).mtimeMs)}`;
-}
 
 function enrichBusinessContext<
   T extends {
@@ -36,7 +26,9 @@ function enrichBusinessContext<
   return {
     ...businessData,
     blueprint,
-    logoUrl: getBusinessLogoUrl(),
+    logoUrl: business.logoStorageKey
+      ? buildBusinessLogoUrl(business.updatedAt.getTime())
+      : null,
     billingRuntime: resolveBillingRuntime({
       blueprint,
       taxProfile: business.taxProfile,
