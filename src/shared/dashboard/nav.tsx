@@ -307,8 +307,8 @@ export function MvpDashboardNav({
               }}
             >
               <Image
-                src="/logo/logo-intuit.jpg"
-                alt="Logo Intuit"
+                src="/api/v1/business/logo"
+                alt="Logo del negocio"
                 width={100}
                 height={100}
                 className="object-contain"
@@ -417,8 +417,8 @@ export function MvpDashboardNav({
               }}
             >
               <Image
-                src="/logo.png"
-                alt="Logo DOVI VELAS"
+                src="/api/v1/business/logo"
+                alt="Logo del negocio"
                 width={48}
                 height={48}
                 className="object-contain"

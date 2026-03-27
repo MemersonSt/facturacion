@@ -6,10 +6,10 @@ import {
   getBusinessContextById,
   updateBusinessSettings,
 } from "@/core/business/business.service";
+import { buildBusinessLogoUrl } from "@/core/business/business-logo.service";
 import { updateBusinessSettingsSchema } from "@/core/business/schemas";
 import { getSession } from "@/lib/auth";
 import { resolveBillingRuntime } from "@/modules/billing/policies/resolve-billing-runtime";
-import { posBlueprintToEditorValue } from "@/modules/pos/policies/pos-policy-editor";
 import { resolvePosRuntime } from "@/modules/pos/policies/resolve-pos-runtime";
 
 function enrichBusinessContext<
@@ -21,16 +21,18 @@ function enrichBusinessContext<
 >(business: T) {
   const { blueprint } = business;
   const businessData = { ...business } as Record<string, unknown>;
-  delete businessData.blueprint;
   delete businessData.posSettings;
 
   return {
     ...businessData,
+    blueprint,
+    logoUrl: business.logoStorageKey
+      ? buildBusinessLogoUrl(business.updatedAt.getTime())
+      : null,
     billingRuntime: resolveBillingRuntime({
       blueprint,
       taxProfile: business.taxProfile,
     }),
-    posPolicy: posBlueprintToEditorValue(blueprint),
     posRuntime: resolvePosRuntime({
       blueprint,
     }),
