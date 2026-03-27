@@ -2,6 +2,7 @@ import {
   ensureDefaultBusiness,
   getBusinessContextById,
 } from "@/core/business/business.service";
+import { getBusinessLogoAsset } from "@/core/business/business-logo.service";
 import { getSession } from "@/lib/auth";
 import { fail } from "@/lib/http";
 import {
@@ -13,6 +14,7 @@ import {
   StandardFonts,
   rgb,
   type PDFFont,
+  type PDFImage,
   type PDFPage,
 } from "pdf-lib";
 
@@ -31,6 +33,7 @@ type DrawContext = {
   pdfDoc: PDFDocument;
   regularFont: PDFFont;
   boldFont: PDFFont;
+  logoImage?: PDFImage;
 };
 
 type TableColumn = {
@@ -310,11 +313,24 @@ type TotalsRow = {
   fillColor?: ReturnType<typeof rgb>;
 };
 
-async function buildSalePdf(data: SaleInvoicePrintData) {
+async function buildSalePdf(
+  data: SaleInvoicePrintData,
+  logoBytes?: Buffer | null,
+) {
   const pdfDoc = await PDFDocument.create();
   const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const ctx: DrawContext = { pdfDoc, regularFont, boldFont };
+
+  let logoImage: PDFImage | undefined;
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (error) {
+      console.error("No se pudo incrustar el logo en el PDF de venta", error);
+    }
+  }
+
+  const ctx: DrawContext = { pdfDoc, regularFont, boldFont, logoImage };
   let page = addPage(pdfDoc);
   let y = PAGE_SIZE[1] - PAGE_MARGIN;
 
@@ -328,6 +344,17 @@ async function buildSalePdf(data: SaleInvoicePrintData) {
 
   drawBox(page, leftBoxX, boxY, leftBoxWidth, boxHeight);
   drawBox(page, rightBoxX, boxY, rightBoxWidth, boxHeight);
+
+  if (ctx.logoImage) {
+    const dimensions = ctx.logoImage.scale(0.19);
+    page.drawImage(ctx.logoImage, {
+      x: leftBoxX + leftBoxWidth - dimensions.width - 12,
+      y: boxY + boxHeight - dimensions.height - 10,
+      width: dimensions.width,
+      height: dimensions.height,
+      opacity: 0.14,
+    });
+  }
 
   let leftY = boxY + boxHeight - 18;
   const companyTitle = data.companyLegalName || data.companyName;
@@ -754,7 +781,8 @@ export async function GET(
       : await ensureDefaultBusiness();
     const { id } = await params;
     const sale = await getSaleInvoicePrintData(id, business.id);
-    const pdfBuffer = await buildSalePdf(sale);
+    const logoAsset = await getBusinessLogoAsset(business.logoStorageKey);
+    const pdfBuffer = await buildSalePdf(sale, logoAsset?.bytes ?? null);
 
     return new Response(pdfBuffer as BodyInit, {
       status: 200,
