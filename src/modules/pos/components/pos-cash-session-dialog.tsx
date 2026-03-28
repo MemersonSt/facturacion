@@ -612,7 +612,7 @@ function HistoryTab({
           pageSizeOptions={[8, 15]}
           sx={{
             border: 0,
-            minHeight: 360,
+            height: 360,
             "& .MuiDataGrid-columnHeaders": {
               backgroundColor: alpha("#6e5642", 0.08),
             },
