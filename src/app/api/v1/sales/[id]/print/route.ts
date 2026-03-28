@@ -307,6 +307,26 @@ function drawTotalsRow(
   );
 }
 
+function measureSimpleFieldHeight(
+  label: string,
+  value: string,
+  maxWidth: number,
+  ctx: DrawContext,
+  options?: { size?: number; valueBold?: boolean },
+) {
+  const size = options?.size ?? 9;
+  const labelText = `${label}: `;
+  const labelWidth = ctx.boldFont.widthOfTextAtSize(labelText, size);
+  const lines = wrapText(
+    value,
+    options?.valueBold ? ctx.boldFont : ctx.regularFont,
+    size,
+    Math.max(20, maxWidth - labelWidth),
+  );
+
+  return lines.length * (size + 2);
+}
+
 type TotalsRow = {
   label: string;
   value: string;
@@ -335,30 +355,82 @@ async function buildSalePdf(
   let y = PAGE_SIZE[1] - PAGE_MARGIN;
 
   const gutter = 12;
-  const leftBoxWidth = (CONTENT_WIDTH - gutter) / 2;
-  const rightBoxWidth = leftBoxWidth;
-  const boxHeight = data.claveAcceso ? 236 : 214;
+  const leftBoxWidth = Math.min(250, CONTENT_WIDTH * 0.46);
+  const rightBoxWidth = CONTENT_WIDTH - leftBoxWidth - gutter;
+  const rightBoxHeight = data.claveAcceso ? 236 : 214;
   const leftBoxX = PAGE_MARGIN;
   const rightBoxX = PAGE_MARGIN + leftBoxWidth + gutter;
-  const boxY = y - boxHeight;
+  const logoGap = 10;
+  const maxLogoWidth = leftBoxWidth * 1.9;
+  const maxLogoHeight = 119;
+  let logoWidth = 0;
+  let logoHeight = 0;
+  const companyTitle = data.companyLegalName || data.companyName;
+  const titleLines = wrapText(
+    companyTitle,
+    boldFont,
+    13,
+    leftBoxWidth - 24,
+  );
+  let leftBoxContentHeight = titleLines.length * 15 + 10;
 
-  drawBox(page, leftBoxX, boxY, leftBoxWidth, boxHeight);
-  drawBox(page, rightBoxX, boxY, rightBoxWidth, boxHeight);
+  if (data.companyAddress) {
+    leftBoxContentHeight += measureSimpleFieldHeight(
+      "Dir Matriz",
+      data.companyAddress,
+      leftBoxWidth - 24,
+      ctx,
+    ) + 4;
+  }
+
+  if (data.companyName && data.companyName !== companyTitle) {
+    leftBoxContentHeight += measureSimpleFieldHeight(
+      "Nombre comercial",
+      data.companyName,
+      leftBoxWidth - 24,
+      ctx,
+    ) + 4;
+  }
+
+  leftBoxContentHeight += measureSimpleFieldHeight(
+    "Obligado a llevar contabilidad",
+    accountingRequiredLabel(data.accountingRequired),
+    leftBoxWidth - 24,
+    ctx,
+  );
+
+  const leftBoxHeight = Math.max(94, leftBoxContentHeight + 28);
 
   if (ctx.logoImage) {
-    const dimensions = ctx.logoImage.scale(0.19);
+    const widthScale = maxLogoWidth / ctx.logoImage.width;
+    const heightScale = maxLogoHeight / ctx.logoImage.height;
+    const scale = Math.min(widthScale, heightScale, 1);
+    logoWidth = ctx.logoImage.width * scale;
+    logoHeight = ctx.logoImage.height * scale;
+  }
+
+  const headerTopY = y;
+  const leftBoxTopY = ctx.logoImage
+    ? headerTopY - logoHeight - logoGap
+    : headerTopY - 10;
+  const leftBoxY = leftBoxTopY - leftBoxHeight;
+  const rightBoxTopY = headerTopY - 2;
+  const rightBoxY = rightBoxTopY - rightBoxHeight;
+
+  if (ctx.logoImage) {
     page.drawImage(ctx.logoImage, {
-      x: leftBoxX + leftBoxWidth - dimensions.width - 12,
-      y: boxY + boxHeight - dimensions.height - 10,
-      width: dimensions.width,
-      height: dimensions.height,
-      opacity: 0.14,
+      x: leftBoxX + (leftBoxWidth - logoWidth) / 2,
+      y: headerTopY - logoHeight,
+      width: logoWidth,
+      height: logoHeight,
     });
   }
 
-  let leftY = boxY + boxHeight - 18;
-  const companyTitle = data.companyLegalName || data.companyName;
-  const titleLines = drawWrappedText(
+  drawBox(page, leftBoxX, leftBoxY, leftBoxWidth, leftBoxHeight);
+  drawBox(page, rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
+
+  let leftY = leftBoxTopY - 18;
+  drawWrappedText(
     page,
     companyTitle,
     leftBoxX + 12,
@@ -368,7 +440,7 @@ async function buildSalePdf(
     13,
     15,
   );
-  leftY -= titleLines * 15 + 10;
+  leftY -= titleLines.length * 15 + 10;
   if (data.companyAddress) {
     leftY -=
       drawSimpleField(
@@ -408,7 +480,7 @@ async function buildSalePdf(
     { valueBold: false },
   ) * 11;
 
-  let rightY = boxY + boxHeight - 18;
+  let rightY = rightBoxTopY - 18;
   if (data.companyRuc) {
     drawText(
       page,
@@ -520,7 +592,7 @@ async function buildSalePdf(
       ) + 8;
   }
 
-  y = boxY - 18;
+  y = Math.min(leftBoxY, rightBoxY) - 18;
 
   const customerNameLines = wrapText(
     data.customerName,
