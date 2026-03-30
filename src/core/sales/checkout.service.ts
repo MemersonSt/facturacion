@@ -300,8 +300,6 @@ export async function checkout(rawInput: unknown, options?: CheckoutOptions) {
           saleContext,
         );
 
-        logger.info("respuesta de documento", documentResult);
-
         return {
           saleContext,
           receivable,
