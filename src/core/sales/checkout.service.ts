@@ -307,8 +307,8 @@ export async function checkout(rawInput: unknown, options?: CheckoutOptions) {
         };
       },
       {
-        maxWait: 5000,
-        timeout: 10000,
+        maxWait: 15000,
+        timeout: 60000,
         isolationLevel: "Serializable",
       }
     );
