@@ -37,7 +37,28 @@ export type TransactionalEmailPayload = {
   };
   html: string;
   text: string;
+  attachments?: Array<{
+    filename: string;
+    contentType: string;
+    contentBase64: string;
+  }>;
 };
+
+function summarizeTransactionalEmailPayload(payload: TransactionalEmailPayload) {
+  return {
+    sourceService: payload.sourceService,
+    eventType: payload.eventType,
+    idempotencyKey: payload.idempotencyKey,
+    subject: payload.subject,
+    to: payload.to,
+    attachments:
+      payload.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        contentBase64Length: attachment.contentBase64.length,
+      })) ?? [],
+  };
+}
 
 export class TransactionalEmailHttpError extends Error {
   statusCode: number | null;
@@ -96,8 +117,9 @@ export async function sendTransactionalEmail(
   } catch (error) {
     console.error("Error al enviar correo transaccional:", {
       error: error instanceof Error ? error.message : error,
-      payload,
+      payload: summarizeTransactionalEmailPayload(payload),
       allowSelfSigned: TRANSACTIONAL_EMAIL_ALLOW_SELF_SIGNED,
+      responseBody: axios.isAxiosError(error) ? error.response?.data : undefined,
     });
     if (axios.isAxiosError(error)) {
       const statusCode = error.response?.status ?? null;

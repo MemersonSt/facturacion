@@ -3,6 +3,7 @@ import { Prisma, SriInvoiceStatus } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
 import type { SaleInvoicePrintData } from "@/lib/sale-invoice-template";
 import { prisma } from "@/lib/prisma";
+import { buildAuthorizedInvoiceEmailAttachments } from "@/modules/billing/services/sri-invoice-artifact.service";
 import { getSaleInvoicePrintData } from "@/modules/billing/services/sale-document-render.service";
 import {
   isTransactionalEmailConfigured,
@@ -13,6 +14,22 @@ import {
 } from "@/modules/notifications/services/transactional-email.client";
 
 const logger = createLogger("AuthorizedInvoiceEmail");
+
+function summarizeEmailPayloadForLog(payload: TransactionalEmailPayload) {
+  return {
+    sourceService: payload.sourceService,
+    eventType: payload.eventType,
+    idempotencyKey: payload.idempotencyKey,
+    subject: payload.subject,
+    to: payload.to,
+    attachments:
+      payload.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        contentBase64Length: attachment.contentBase64.length,
+      })) ?? [],
+  };
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -232,6 +249,7 @@ async function buildInvoiceAuthorizedEmailPayload(
   }
 
   const data = await getSaleInvoicePrintData(invoice.saleId, issuer.businessId);
+  const attachments = await buildAuthorizedInvoiceEmailAttachments(sriInvoiceId);
   return {
     sourceService: TRANSACTIONAL_EMAIL_SOURCE_SERVICE,
     eventType: "invoice.authorized",
@@ -243,6 +261,7 @@ async function buildInvoiceAuthorizedEmailPayload(
     },
     html: buildAuthorizedInvoiceEmailHtml(data),
     text: buildAuthorizedInvoiceEmailText(data),
+    attachments,
   };
 }
 
@@ -256,15 +275,11 @@ export async function sendAuthorizedInvoiceEmailIfApplicable(
     if (!payload) {
       return;
     }
-    logger.info("invoice:email:prepared", {
-      sriInvoiceId,
-      to: payload.to.email,
-      eventType: payload.eventType,
-    });
+    
     const response = await sendTransactionalEmail(payload);
 
     await logEmailIntegration({
-      requestPayload: payload,
+      requestPayload: summarizeEmailPayloadForLog(payload),
       responsePayload: response,
       httpStatus: 200,
       success: true,
@@ -291,7 +306,7 @@ export async function sendAuthorizedInvoiceEmailIfApplicable(
 
     if (payload) {
       await logEmailIntegration({
-        requestPayload: payload,
+        requestPayload: summarizeEmailPayloadForLog(payload),
         responsePayload: responseBody,
         httpStatus,
         success: false,
