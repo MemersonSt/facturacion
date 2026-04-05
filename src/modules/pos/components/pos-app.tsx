@@ -3225,19 +3225,7 @@ export function PosApp({
                     />
                   </Stack>
 
-                  <Box
-                    sx={
-                      {
-                        // overflowX: "auto",
-                        // overflowY: "hidden",
-                        // borderRadius: "18px",
-                        // border: `1px solid ${subtleBorder}`,
-                        // flex: 1,
-                        // minHeight: 0,
-                        // minWidth: 0,
-                      }
-                    }
-                  >
+                  <Box>
                     <DataGrid
                       rows={linePreview}
                       columns={dataGridColumns}
@@ -3253,7 +3241,7 @@ export function PosApp({
                         noRowsLabel: "Todavia no hay productos agregados.",
                       }}
                       sx={{
-                        height: "100%",
+                        height: 240,
                         minWidth: { xs: 860, md: 0 },
                         border: "none",
                         "& .MuiDataGrid-columnHeaders": {
